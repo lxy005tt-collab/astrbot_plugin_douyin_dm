@@ -33,7 +33,7 @@ export function readChatDOM({debug=false}={}) {
       return facts;
     };
     const editor=[...document.querySelectorAll('.messageEditorinputArea,[contenteditable="true"][role="textbox"],[contenteditable="true"]')].find(visible);
-    if(!editor)return {ready:false,reason:'请打开消息面板，并选中你和 Mimi 的私信。',...(debug?{diagnostics:{
+    if(!editor)return {ready:false,reason:'请打开消息面板，并选中要绑定的私信会话。',...(debug?{diagnostics:{
       navigation:[...document.querySelectorAll('[data-e2e]')].filter(x=>/im-|conversation/.test(x.getAttribute('data-e2e'))).slice(0,15).map(x=>({tag:x.tagName,className:String(x.className),'data-e2e':x.getAttribute('data-e2e')})),
       conversations:[...document.querySelectorAll('[data-e2e="conversation-item"]')].slice(0,15).map(x=>({facts:factsFor(x),prop_keys:Object.keys(x).filter(k=>k.startsWith('__reactProps')).map(k=>Object.keys(x[k]||{}))}))}}:{})};
     let root=editor;

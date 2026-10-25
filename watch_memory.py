@@ -82,7 +82,7 @@ async def _build_watch_record(owner,event,sources,canonical,persona,watch_key,so
     when = datetime.fromtimestamp(watched_at or time.time()).strftime('%Y-%m-%d %H:%M')
     media_kind='图文' if sources and all(source.get('kind')=='images' for source in sources) else '视频'
     action='主动读取了一条抖音作品' if any(source.get('origin')=='self_browse' for source in sources) else f'在抖音观看了用户分享的{media_kind}'
-    content = f'{when}，Mimi {action}。内容：{summary}'
+    content = f'{when}，机器人{action}。内容：{summary}'
     if facts:
         content += '\n具体画面或事件：' + '；'.join(facts)
     if audio:

@@ -25,7 +25,7 @@
 <label for="browser-type">登录浏览器</label><select id="browser-type" name="browser_type"><option>自动选择</option><option>Edge</option><option>Chrome</option><option>Chromium</option></select>
 <label><input name="whitelist_enabled" type="checkbox"> 只回复白名单里的私信</label>
 <label for="whitelist">私信白名单</label><textarea id="whitelist" name="private_whitelist" rows="2" placeholder="每行一个会话标识；首次绑定会自动添加当前对象"></textarea>
-<label><input name="autonomy_enabled" type="checkbox"> 允许 bot 主动聊天或自己刷抖音</label>
+<label><input name="autonomy_enabled" type="checkbox"> 允许机器人主动聊天或自己刷抖音</label>
 <label for="interval">主动活动间隔，分钟</label><input id="interval" name="autonomy_interval_minutes" type="number" min="1" max="10000">
 <label><input name="allow_public_comments" type="checkbox"> 允许在实际读过的作品下发表评论</label>
 <p class="detail">这是发到抖音评论区的公开留言。关闭后仍可刷作品、读取内容和私聊。</p>
@@ -41,7 +41,7 @@
 <section><h2>登录和绑定</h2><ol><li>打开登录窗口，用机器人账号登录抖音，进入你们的私信。</li><li>绑定当前私信，只记录当前历史，不补回旧消息。</li><li>开启回复，再用自己的账号发一句话试试。</li></ol>
 <p id="state"></p><p id="binding" class="detail"></p>
 <div class="row"><button data-control="open">打开登录窗口</button><button data-control="bind">绑定当前私信</button><button class="primary" data-control="start">开启回复</button><button data-control="pause">暂停回复</button><button data-control="reopen">重开登录窗口</button></div></section>
-<section><h2>自己刷一条</h2><p>打开自主活动开关后可在这里试读推荐作品。正常定时触发时，Mimi 可以选择聊天、刷作品或读完再聊天。</p>
+<section><h2>自己刷一条</h2><p>打开自主活动开关后可在这里试读推荐作品。正常定时触发时，机器人可以选择聊天、刷作品或读完再聊天。</p>
 <button id="watch">实际读一条推荐作品</button><pre id="observation" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
 <details><summary>给刚读过的作品留言</summary><label>作品链接<input id="comment-url" placeholder="先读作品，再填写该作品链接"></label>
 <label>评论正文<textarea id="comment-text" maxlength="200" rows="3"></textarea></label><button id="comment">发表评论</button><p class="detail">需要开启上方评论开关；只有得到服务器评论 ID 才算成功，未知结果不会自动重发。</p></details></section>

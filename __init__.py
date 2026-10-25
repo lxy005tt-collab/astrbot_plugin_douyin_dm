@@ -1,1 +1,1 @@
-"""Mimi private Douyin conversation bridge."""
+"""Douyin private conversation bridge."""

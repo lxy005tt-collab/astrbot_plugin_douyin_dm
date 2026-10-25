@@ -12,7 +12,7 @@ DEFAULTS={
     'video_provider_id':'video','video_input_mode':'转述为文本','video_separate_audio':True,
     'video_transcription_timeout_seconds':90,'video_transcription_prompt':'',
     'api_base':'','api_key':'','model':'','video_api_base':'','video_api_key':'','video_model':'',
-    'system_prompt':'你是 Mimi，和用户自然聊天。只依据实际读到的内容，不编造浏览、观看或评论经历。',
+    'system_prompt':'你是一个聊天助手，和用户自然聊天。只依据实际读到的内容，不编造浏览、观看或评论经历。',
     'autonomy_enabled':False,'allow_public_comments':False,'autonomy_interval_minutes':30,
 }
 

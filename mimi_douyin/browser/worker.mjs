@@ -70,7 +70,7 @@ async function status() {
 }
 
 async function snapshot(options={}) {
-  if(!page || page.isClosed())throw new Error('请先打开并登录 Mimi 的抖音窗口。');
+  if(!page || page.isClosed())throw new Error('请先打开浏览器，并登录机器人的抖音账号。');
   const domFile=path.join(path.dirname(fileURLToPath(import.meta.url)),'dom.mjs');
   const version=(await fs.stat(domFile)).mtimeMs;
   const {readChatDOM}=await import(pathToFileURL(domFile).href+'?v='+version);

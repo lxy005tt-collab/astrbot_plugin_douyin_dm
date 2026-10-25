@@ -16,7 +16,7 @@ def main():
         print(json.dumps(asyncio.run(RuntimeEnvironment(config,config.data_dir).diagnose()),ensure_ascii=False,indent=2));return
     import uvicorn
     from .app import create_app
-    print(f'Mimi 本地设置页：http://127.0.0.1:{args.port} （首次打开后配置模型和登录）',flush=True)
+    print(f'与bot刷抖音 本地设置页：http://127.0.0.1:{args.port} （首次打开后配置模型和登录）',flush=True)
     uvicorn.run(create_app(args.data_dir),host='127.0.0.1',port=args.port,log_level='warning',access_log=False)
 
 if __name__=='__main__':main()
