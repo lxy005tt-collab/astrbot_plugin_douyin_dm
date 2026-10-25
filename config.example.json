@@ -1,0 +1,14 @@
+{
+  "api_base": "",
+  "api_key": "",
+  "model": "",
+  "video_api_base": "",
+  "video_api_key": "",
+  "video_model": "",
+  "media_dir": "",
+  "browser_type": "自动选择",
+  "auto_reply_enabled": false,
+  "autonomy_enabled": false,
+  "allow_public_comments": false,
+  "autonomy_interval_minutes": 30
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>抖音接入设置</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<main>
+  <header><div><h1>抖音接入设置</h1><p>选择视频保存位置，检查依赖，再登录和绑定私信。</p></div><button id="refresh" type="button">重新检测</button></header>
+  <p id="notice" role="status" aria-live="polite"></p>
+  <section>
+    <h2>视频保存位置</h2>
+    <p>选择的是运行 AstrBot 的电脑或容器中的目录。</p>
+    <label for="media-dir">保存目录</label>
+    <div class="row"><input id="media-dir" placeholder="留空使用插件数据目录"><button id="browse" type="button">选择文件夹</button></div>
+    <p class="detail" id="effective-dir"></p>
+    <div class="row"><button id="default-dir" type="button">使用默认目录</button><button id="save" class="primary" type="button">保存设置</button></div>
+    <p class="detail">改变位置只影响新下载的视频，已有缓存和登录资料保留。</p>
+    <label for="max-download">单条作品下载上限（MB）</label>
+    <input id="max-download" type="number" min="1" max="10000" step="1" value="64">
+    <p class="detail">限制一条作品的原视频或全部原图总大小。遇到“作品媒体总大小超过下载设置”时，可在这里调大，保存后立即生效。</p>
+    <label><input id="cache-cleanup" type="checkbox"> 定时清理媒体缓存</label>
+    <label for="cleanup-hours">每隔多少小时清理一次</label><input id="cleanup-hours" type="number" min="1" max="10000" step="1" value="24">
+    <label for="retention-hours">保留最近多少小时的缓存</label><input id="retention-hours" type="number" min="0" max="10000" step="1" value="24">
+    <p class="detail">0 表示清理全部已用完的缓存。只清理当前保存目录中本程序管理的媒体，跳过正在使用的文件；聊天记录、观看转述和登录资料保留。程序重新启动后重新计时。</p>
+    <p id="cache-state" class="detail"></p>
+    <label for="browser-type">登录浏览器</label>
+    <select id="browser-type"><option>自动选择</option><option>Edge</option><option>Chrome</option><option>Chromium</option></select>
+    <p class="detail">自动选择优先使用已安装的 Edge 或 Chrome。首次扫码需要图形桌面；容器请先配置桌面或 VNC/X11。</p>
+    <button id="reopen" type="button" hidden>重开登录窗口以应用浏览器选择</button>
+  </section>
+  <section>
+    <h2>运行依赖</h2>
+    <p>自动检测现有程序。不会在启动时偷偷下载依赖，也不需要其他浏览器插件。</p>
+    <div class="table-wrap"><table><thead><tr><th>组件</th><th>状态</th><th>检测到的位置</th></tr></thead><tbody id="dependencies"></tbody></table></div>
+    <div class="row"><button id="install-playwright" type="button">安装插件浏览器依赖</button><button id="install-chromium" type="button">下载插件 Chromium</button></div>
+    <p class="detail" id="install-state"></p>
+    <details><summary>检测不到已有程序？</summary><p>可以在插件配置中填写 Node、FFmpeg、FFprobe、浏览器程序或 Playwright 的路径；留空则自动查找。模型接口也在插件配置中选择，不需要填写别人的模型 ID。</p></details>
+  </section>
+  <section>
+    <h2>自己刷抖音</h2>
+    <label><input id="autonomy" type="checkbox"> 允许 bot 自己刷抖音</label>
+    <p class="detail">向主人私聊和现有主动回复提供实际观看工具，由她选择聊天、刷作品或看完再聊，不新增定时任务。</p>
+    <label><input id="public-comments" type="checkbox"> 允许在实际读过的作品下发表评论</label>
+    <p class="detail">评论会发到抖音公开评论区。改变开关后点击上方“保存设置”。</p>
+    <button data-action="watch_recommended" type="button">实际读一条推荐作品</button>
+    <pre id="activity-observation" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+  </section>
+  <section>
+    <h2>首次连接</h2>
+    <ol><li>在插件配置选择视频转述模型；聊天模型和人格留空可沿用 AstrBot 当前默认配置。</li><li>检查上方依赖，打开登录窗口，登录机器人账号并进入目标私信。</li><li>点击“绑定当前私信”，核对对象，再开启回复。旧消息不会补发。</li></ol>
+    <p id="models" class="detail"></p>
+    <p id="bot-state"></p>
+    <div class="row"><button data-action="open" type="button">打开登录窗口</button><button data-action="bind" type="button">绑定当前私信</button><button data-action="start" class="primary" type="button">开启回复</button><button data-action="pause" type="button">暂停回复</button></div>
+    <p id="session" class="detail code"></p>
+    <p id="optional-memory" class="detail"></p>
+  </section>
+</main>
+<dialog id="folder-dialog">
+  <h2>选择视频保存目录</h2><p>浏览服务器目录，选中后点击“使用此目录”。</p>
+  <div class="row"><input id="folder-path" aria-label="目录路径"><button id="folder-go" type="button">打开</button></div>
+  <div class="row"><button id="folder-roots" type="button">磁盘 / 根目录</button><button id="folder-up" type="button">上一级</button></div>
+  <p id="folder-notice" role="status"></p><div id="folders"></div>
+  <footer><button id="folder-cancel" type="button">取消</button><button id="folder-use" class="primary" type="button">使用此目录</button></footer>
+</dialog>
+</body>
+</html>

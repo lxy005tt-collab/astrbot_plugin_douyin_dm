@@ -1,0 +1,205 @@
+{
+  "enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "启用抖音私信接入"
+  },
+  "auto_reply_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "自动回复已绑定的私信",
+    "hint": "先登录并绑定你与 Mimi 的私信；首次绑定只记录当前历史，不补发旧消息。"
+  },
+  "whitelist_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "启用私信白名单",
+    "hint": "开启后只处理白名单会话。关闭后可处理当前打开的其他私信。"
+  },
+  "autonomy_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "允许 bot 自己刷抖音",
+    "hint": "向主人私聊和现有主动回复任务提供真实观看工具，由模型选择是否使用；不额外创建定时任务。"
+  },
+  "allow_public_comments": {
+    "type": "bool",
+    "default": false,
+    "description": "允许在看过的作品下发表评论",
+    "hint": "开启后模型可在本插件实际读取过的作品下发表评论。发送结果不明确时不会自动重发。"
+  },
+  "remember_videos": {
+    "type": "bool",
+    "default": false,
+    "description": "记住看过的视频",
+    "hint": "可选，需要 LivingMemory。保存客观内容、声音要点和来源；未启用时正常视频聊天不受影响。"
+  },
+  "defer_video_memory_indexing": {
+    "type": "bool",
+    "default": false,
+    "description": "延后视频向量入库",
+    "hint": "开启时先把视频回忆保存在本地，两边仍可读取观看回忆；不调用向量模型写入。允许向量服务运行后可关闭此项并补存。"
+  },
+  "private_whitelist": {
+    "type": "list",
+    "default": [],
+    "description": "私信白名单",
+    "hint": "填写会话标识，每项一个。首次绑定会自动添加主人；清空后不接收任何人的消息。可用 /抖音 状态 查看已绑定标识；/抖音 查看 查看当前会话标识。保持目标私信在专用窗口打开。"
+  },
+  "provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "聊天模型提供商",
+    "_special": "select_provider",
+    "hint": "留空跟随 AstrBot 当前配置的默认聊天模型。与视频转述模型独立配置。"
+  },
+  "video_input_mode": {
+    "type": "string",
+    "default": "转述为文本",
+    "options": [
+      "转述为文本",
+      "直接交给聊天模型"
+    ],
+    "description": "视频处理方式",
+    "hint": "默认由专门的视频模型转述，再交给 Mimi 聊天。直接处理需要聊天模型支持视频。"
+  },
+  "video_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "视频转述模型接口",
+    "_special": "select_provider",
+    "hint": "首次使用请选择能读取视频和音频文件的模型；不会猜测或创建你的模型接口。"
+  },
+  "video_transcription_prompt": {
+    "type": "text",
+    "default": "按时间顺序客观转述视频中发生的事，保留关键动作、场景变化、能听清的对白和声音，以及有意义的屏幕文字。不要推断人物身份、与用户的关系或用户偏好。听不清、看不清的内容明确写入 uncertain。",
+    "description": "视频转述要求"
+  },
+  "video_transcription_timeout_seconds": {
+    "type": "int",
+    "default": 90,
+    "description": "视频转述等待上限秒数"
+  },
+  "video_separate_audio": {
+    "type": "bool",
+    "default": true,
+    "description": "附带独立音轨核对",
+    "hint": "额外附带同一视频的完整音轨，避免漏听或把语音当作字幕。所选接口需支持音频文件输入。"
+  },
+  "persona_id": {
+    "type": "string",
+    "default": "",
+    "description": "使用的人格 ID",
+    "hint": "留空跟随 AstrBot 当前配置的默认人格；也可填写已有的人格 ID。不修改人格正文。"
+  },
+  "poll_seconds": {
+    "type": "int",
+    "default": 4,
+    "description": "检查新私信的间隔秒数"
+  },
+  "merge_seconds": {
+    "type": "int",
+    "default": 3,
+    "description": "等待合并连续私信的秒数"
+  },
+  "reply_timeout_seconds": {
+    "type": "int",
+    "default": 180,
+    "description": "单次回复等待上限秒数"
+  },
+  "media_dir": {
+    "type": "string",
+    "default": "",
+    "description": "视频保存目录",
+    "hint": "可在插件页面“接入设置”中浏览选择。留空为本插件数据目录下的 media；相对路径也以插件数据目录为基准。只改变新视频保存位置，不搬动已有文件。"
+  },
+  "browser_type": {
+    "type": "string",
+    "default": "自动选择",
+    "options": [
+      "自动选择",
+      "Edge",
+      "Chrome",
+      "Chromium"
+    ],
+    "description": "登录浏览器",
+    "hint": "自动选择优先使用已安装的 Edge/Chrome，也支持插件自用 Chromium。"
+  },
+  "browser_headless": {
+    "type": "bool",
+    "default": false,
+    "description": "无头浏览器（已有登录资料时）",
+    "hint": "首次扫码需要图形桌面；普通桌面用户保持关闭。容器部署需提供桌面或 VNC/X11 完成登录。"
+  },
+  "node_binary": {
+    "type": "string",
+    "default": "",
+    "description": "Node 程序路径（可选）",
+    "hint": "留空自动查找系统 PATH 和常见安装位置，要求 Node.js 20+。"
+  },
+  "playwright_package": {
+    "type": "string",
+    "default": "",
+    "description": "Playwright package.json 路径（可选）",
+    "hint": "留空使用插件自己的运行目录；可在接入设置中安装。不需要其他浏览器插件。"
+  },
+  "browser_executable": {
+    "type": "string",
+    "default": "",
+    "description": "浏览器程序路径（可选）",
+    "hint": "非标准安装位置可手动指定，否则按浏览器类型自动查找。"
+  },
+  "browser_profile": {
+    "type": "string",
+    "default": "",
+    "description": "浏览器登录资料目录（可选）",
+    "hint": "留空为本插件数据目录下的 browser-profile。更改视频目录不会改变这里的登录资料。"
+  },
+  "max_download_mb": {
+    "type": "int",
+    "default": 64,
+    "description": "单视频下载大小上限 MB"
+  },
+  "max_post_images": {
+    "type": "int",
+    "default": 30,
+    "description": "图文最多读取图片张数",
+    "hint": "按原顺序读取全部原图。超过数量或大小限制时明确提示，不只看封面就声称读完。"
+  },
+  "max_model_video_mb": {
+    "type": "int",
+    "default": 18,
+    "description": "送入模型的视频大小上限 MB",
+    "hint": "超过后尝试完整视频压缩，不截取片段冒充完整视频。"
+  },
+  "ffmpeg_binary": {
+    "type": "string",
+    "default": "",
+    "description": "FFmpeg 程序路径（可选）",
+    "hint": "留空自动查找系统 PATH 和 Windows WinGet 安装位置，用于视频压缩与音轨分离。"
+  },
+  "ffprobe_binary": {
+    "type": "string",
+    "default": "",
+    "description": "FFprobe 程序路径（可选）",
+    "hint": "优先查找 FFmpeg 同目录，再查系统 PATH；用于检查视频与音轨。"
+  },
+  "cache_cleanup_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "定时清理媒体缓存",
+    "hint": "开启后定时清理当前目录中本程序管理的过期媒体；任务进行中会跳过，聊天记录和登录资料保留。"
+  },
+  "cache_cleanup_interval_hours": {
+    "type": "int",
+    "default": 24,
+    "description": "缓存清理间隔（小时）",
+    "hint": "1～10000 小时。程序重新启动、或更改清理设置后，从当前时间重新计时。"
+  },
+  "cache_retention_hours": {
+    "type": "int",
+    "default": 24,
+    "description": "缓存保留时长（小时）",
+    "hint": "只清理保存时间超过此时长的缓存；0 表示清理全部已经用完的缓存。"
+  }
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>与bot刷抖音</title><link rel="stylesheet" href="/assets/style.css"><script src="/assets/app.js" defer></script></head>
+<body><main>
+<header><div><h1>与bot刷抖音</h1><p>独立运行，本页不需要 AstrBot。</p></div><button id="refresh">刷新状态</button></header>
+<p id="notice" role="status" aria-live="polite"></p>
+<section><h2>先配置模型</h2><p>先填聊天接口，再选择能看视频、图片和音频的模型。视频接口留空时使用同一地址和密钥，模型名称仍需填写。</p>
+<form id="settings">
+<label for="api-base">聊天接口地址</label><input id="api-base" name="api_base" placeholder="https://你的接口地址/v1" autocomplete="off">
+<label for="api-key">聊天接口密钥</label><input id="api-key" name="api_key" type="password" autocomplete="new-password" placeholder="留空保留已有密钥">
+<label for="model">聊天模型名称</label><input id="model" name="model" placeholder="填写接口实际支持的模型名">
+<label for="video-model">看视频和图文的模型</label><input id="video-model" name="video_model" placeholder="填写支持视频、图片和音频的模型名">
+<details><summary>视频使用另一家接口</summary><label for="video-base">视频接口地址</label><input id="video-base" name="video_api_base" placeholder="留空沿用聊天接口">
+<label for="video-key">视频接口密钥</label><input id="video-key" name="video_api_key" type="password" autocomplete="new-password" placeholder="留空沿用聊天密钥或保留已保存的独立密钥"></details>
+<label><input name="use_chat_video_key" id="use-chat-key" type="checkbox"> 视频接口使用聊天接口的同一份密钥</label>
+<label for="style">聊天风格</label><textarea id="style" name="system_prompt" rows="4"></textarea><p class="detail">更换聊天风格后使用独立的历史范围，避免继续引用旧风格的对话。</p>
+<label for="media-dir">视频和图文保存目录</label><div class="row"><input id="media-dir" name="media_dir" placeholder="留空使用数据目录下的 media"><button type="button" id="browse">选择文件夹</button></div>
+<p id="effective-dir" class="detail"></p>
+<label for="max-download">单条作品下载上限（MB）</label><input id="max-download" name="max_download_mb" type="number" min="1" max="10000" step="1" value="64">
+<p class="detail">限制一条作品的原视频或全部原图总大小。出现媒体总大小超限时，可在这里调大；保存后新下载立即生效。</p>
+<label><input id="cache-cleanup" name="cache_cleanup_enabled" type="checkbox"> 定时清理媒体缓存</label>
+<label for="cleanup-hours">每隔多少小时清理一次</label><input id="cleanup-hours" name="cache_cleanup_interval_hours" type="number" min="1" max="10000" step="1" value="24">
+<label for="retention-hours">保留最近多少小时的缓存</label><input id="retention-hours" name="cache_retention_hours" type="number" min="0" max="10000" step="1" value="24">
+<p class="detail">0 表示清理全部已用完的缓存。只处理当前目录中本程序管理的媒体，正在使用的文件会跳过；聊天记录、观看转述和登录资料保留。程序重新启动后重新计时。</p><p id="cache-state" class="detail"></p>
+<label for="browser-type">登录浏览器</label><select id="browser-type" name="browser_type"><option>自动选择</option><option>Edge</option><option>Chrome</option><option>Chromium</option></select>
+<label><input name="whitelist_enabled" type="checkbox"> 只回复白名单里的私信</label>
+<label for="whitelist">私信白名单</label><textarea id="whitelist" name="private_whitelist" rows="2" placeholder="每行一个会话标识；首次绑定会自动添加当前对象"></textarea>
+<label><input name="autonomy_enabled" type="checkbox"> 允许 bot 主动聊天或自己刷抖音</label>
+<label for="interval">主动活动间隔，分钟</label><input id="interval" name="autonomy_interval_minutes" type="number" min="1" max="10000">
+<label><input name="allow_public_comments" type="checkbox"> 允许在实际读过的作品下发表评论</label>
+<p class="detail">这是发到抖音评论区的公开留言。关闭后仍可刷作品、读取内容和私聊。</p>
+<details><summary>手动指定程序位置</summary><p>通常留空自动查找；只有检测不到已安装程序时再填写。</p>
+<label>Node 程序路径<input name="node_binary"></label><label>FFmpeg 程序路径<input name="ffmpeg_binary"></label>
+<label>FFprobe 程序路径<input name="ffprobe_binary"></label><label>浏览器程序路径<input name="browser_executable"></label>
+<label>浏览器登录资料目录<input name="browser_profile" placeholder="留空使用独立的 browser-profile"></label></details>
+<div class="row"><button class="primary" type="submit">保存设置</button><button type="button" id="test-model">测试聊天接口</button></div>
+</form></section>
+<section><h2>检查运行依赖</h2><p>已有程序会自动识别。缺 Node 或 FFmpeg 时先安装对应程序；Playwright 和可选 Chromium 可以在这里安装。</p>
+<div class="table-wrap"><table><thead><tr><th>组件</th><th>状态</th><th>位置与说明</th></tr></thead><tbody id="dependencies"></tbody></table></div>
+<div class="row"><button data-install="playwright">安装浏览器连接组件</button><button data-install="chromium">下载 Chromium 浏览器</button></div><p id="install-state" class="detail"></p></section>
+<section><h2>登录和绑定</h2><ol><li>打开登录窗口，用机器人账号登录抖音，进入你们的私信。</li><li>绑定当前私信，只记录当前历史，不补回旧消息。</li><li>开启回复，再用自己的账号发一句话试试。</li></ol>
+<p id="state"></p><p id="binding" class="detail"></p>
+<div class="row"><button data-control="open">打开登录窗口</button><button data-control="bind">绑定当前私信</button><button class="primary" data-control="start">开启回复</button><button data-control="pause">暂停回复</button><button data-control="reopen">重开登录窗口</button></div></section>
+<section><h2>自己刷一条</h2><p>打开自主活动开关后可在这里试读推荐作品。正常定时触发时，Mimi 可以选择聊天、刷作品或读完再聊天。</p>
+<button id="watch">实际读一条推荐作品</button><pre id="observation" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+<details><summary>给刚读过的作品留言</summary><label>作品链接<input id="comment-url" placeholder="先读作品，再填写该作品链接"></label>
+<label>评论正文<textarea id="comment-text" maxlength="200" rows="3"></textarea></label><button id="comment">发表评论</button><p class="detail">需要开启上方评论开关；只有得到服务器评论 ID 才算成功，未知结果不会自动重发。</p></details></section>
+</main>
+<dialog id="folder-dialog"><h2>选择保存目录</h2><div class="row"><input id="folder-path" aria-label="目录路径"><button id="folder-go">打开</button></div>
+<div class="row"><button id="folder-roots">磁盘／根目录</button><button id="folder-up">上一级</button></div><p id="folder-notice" role="status"></p><div id="folders"></div>
+<footer><button id="folder-cancel">取消</button><button id="folder-use">使用此目录</button></footer></dialog>
+</body></html>
