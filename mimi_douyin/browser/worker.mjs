@@ -34,7 +34,12 @@ async function open(config) {
     try{
       await page.locator('[data-e2e="im-entry"]').click({timeout:20000});
       await page.locator('[data-e2e="conversation-item"]').first().waitFor({timeout:15000});
-      const match=await page.evaluate(peer=>{
+      const listed=await snapshot({conversations_only:true});
+      const byID=config.restore_peer.conversation_id?(listed.conversations||[]).filter(
+        item=>item.conversation_id===config.restore_peer.conversation_id):[];
+      let match=byID.length===1;
+      if(match)await page.locator('[data-mimi-chat-index="'+byID[0].index+'"]').click();
+      else match=await page.evaluate(peer=>{
         const clean=x=>{try{return new URL(x).pathname;}catch{return '';}};
         const candidates=[...document.querySelectorAll('[data-e2e="conversation-item"]')]
           .filter(x=>[...x.querySelectorAll('img')].some(i=>clean(i.src)===clean(peer.avatar))
@@ -43,7 +48,7 @@ async function open(config) {
         candidates[0].setAttribute('data-mimi-restore-peer','true');return true;
       },config.restore_peer);
       if(match){
-        await page.locator('[data-mimi-restore-peer="true"]').click();
+        if(byID.length!==1)await page.locator('[data-mimi-restore-peer="true"]').click();
         await page.locator('.messageEditorinputArea').waitFor({timeout:10000});
         let restored;
         for(let i=0;i<6;i++){
@@ -74,18 +79,21 @@ async function snapshot(options={}) {
   const domFile=path.join(path.dirname(fileURLToPath(import.meta.url)),'dom.mjs');
   const version=(await fs.stat(domFile)).mtimeMs;
   const {readChatDOM}=await import(pathToFileURL(domFile).href+'?v='+version);
-  const data=await page.evaluate(readChatDOM,{debug:!!options.debug});
+  const data=await page.evaluate(readChatDOM,{debug:!!options.debug,conversations_only:!!options.conversations_only});
   if(!data.ready)return data;
   const peer=data.peer;
-  const identity=peer.link?publicURL(peer.link):peer.conversation_id || (peer.name&&peer.avatar?peer.name+'|'+publicURL(peer.avatar):'');
+  const group=peer.conversation_type==='group';
+  if(group&&!peer.conversation_id)throw new Error('尚未取得稳定的群会话 ID，请打开群资料后重试绑定。');
+  const identity=group?'group:'+peer.conversation_id:peer.link?publicURL(peer.link):peer.conversation_id || (peer.name&&peer.avatar?peer.name+'|'+publicURL(peer.avatar):'');
   peer.identity_kind=peer.link?'profile_link':peer.conversation_id?'conversation_id':'name_and_avatar';
   peer.key=identity?hash(identity):'';
   peer.link=publicURL(peer.link);peer.avatar=publicURL(peer.avatar);
   const duplicates=new Map();
   for(const item of data.items) {
+    if(group&&item.sender_id&&!/^\d+$/.test(item.sender_id))item.sender_id='dy-member-'+hash(item.sender_id).slice(0,24);
     // Never use the virtual-list index as the message identity: it shifts as new
     // messages arrive. Python aligns repeated content with the previous snapshot.
-    item.fingerprint=hash(JSON.stringify([item.sender,item.text,item.links.map(publicURL),item.images.map(publicURL),item.kind]));
+    item.fingerprint=hash(JSON.stringify([item.sender,item.text,item.links.map(publicURL),item.images.map(publicURL),item.kind,...(group?[item.sender_id]:[])]));
     const occurrence=duplicates.get(item.fingerprint)||0;duplicates.set(item.fingerprint,occurrence+1);
     item.key=item.native_id || item.fingerprint+':'+occurrence;
     item.images=item.images.map(publicURL);
@@ -96,6 +104,7 @@ async function snapshot(options={}) {
 async function send(args) {
   const before=await snapshot();
   if(!before.ready || before.peer.key!==args.peer_key)throw new Error('当前私信对象与已绑定对象不一致，未发送。');
+  if(args.conversation_type&&before.peer.conversation_type!==args.conversation_type)throw new Error('会话类型已变化，没有发送。');
   if(!before.direction_proven)throw new Error('尚未确认消息的收发方向，未发送。');
   const text=String(args.text||'').trim();
   if(!text || text.length>2000)throw new Error('回复为空或超过当前单条文字限制。');
@@ -114,6 +123,16 @@ async function send(args) {
     }
   }
   return {state:'unknown',receipt:'no_confirmed_ui_echo'};
+}
+
+async function selectConversation(args) {
+  const list=await snapshot({conversations_only:true});
+  const matches=(list.conversations||[]).filter(item=>args.conversation_id?
+    item.conversation_id===args.conversation_id:item.name===args.name);
+  if(matches.length!==1)throw new Error(matches.length?'存在同名会话，请使用会话 ID 选择。':'当前列表未找到指定会话，请先在抖音消息列表中打开它。');
+  await page.locator('[data-mimi-chat-index="'+matches[0].index+'"]').click();
+  await page.waitForTimeout(500);
+  return snapshot();
 }
 
 async function download(args) {
@@ -140,14 +159,16 @@ input.on('line',line=>{queue=queue.then(async()=>{
   let request;
   try {
     request=JSON.parse(line);
-    const actions={open:()=>open(request.args),status,snapshot:()=>snapshot(request.args),send:()=>send(request.args),download:()=>download(request.args),post_info:()=>postInfo(request.args),
+    const actions={open:()=>open(request.args),status,snapshot:()=>snapshot(request.args),conversations:()=>snapshot({conversations_only:true}),select_conversation:()=>selectConversation(request.args),send:()=>send(request.args),download:()=>download(request.args),post_info:()=>postInfo(request.args),
       browse:()=>explore('browse',request.args),comment:()=>explore('comment',request.args),
       configure:async()=>{
         const limit=request.args.max_download_mb??settings.max_download_mb;
+        const durationLimit=request.args.max_video_duration_seconds??settings.max_video_duration_seconds??180;
         if(!Number.isInteger(limit)||limit<1||limit>10000)throw new Error('作品下载大小上限应为 1～10000 MB。');
+        if(!Number.isInteger(durationLimit)||durationLimit<0||durationLimit>10000)throw new Error('视频时长上限应为 0～10000 秒。');
         await fs.mkdir(request.args.media_dir,{recursive:true});
-        settings.media_dir=request.args.media_dir;settings.max_download_mb=limit;
-        return {media_dir:settings.media_dir,max_download_mb:settings.max_download_mb};
+        settings.media_dir=request.args.media_dir;settings.max_download_mb=limit;settings.max_video_duration_seconds=durationLimit;
+        return {media_dir:settings.media_dir,max_download_mb:settings.max_download_mb,max_video_duration_seconds:durationLimit};
       },
       close:async()=>{await context?.close();context=null;page=null;return {closed:true};}};
     if(!actions[request.action])throw new Error('未知浏览器操作。');

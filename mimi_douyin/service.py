@@ -11,6 +11,7 @@ from .media import prepare_video
 from .perception import transcribe_video,format_transcript
 from .runtime import RuntimeEnvironment
 from .transport import BrowserWorker,Ledger
+from .share_request import shared_post_request
 from .cache import CacheMaintenance
 
 class DouyinService:
@@ -168,7 +169,9 @@ class DouyinService:
                 for item in items:
                     if item.get('kind')=='video':
                         try:
-                            source=await self.browser.call('download',{'peer_key':peer,'message_key':item['key']},timeout=180)
+                            source=await self.browser.call('download',shared_post_request(peer,item),timeout=180)
+                            if source.get('state')=='skipped':
+                                errors.append(source['message']);continue
                             if source.get('path'):source['path']=await prepare_video(source['path'],self.media_dir,self.ffmpeg_binary,
                                 float(self.config['max_model_video_mb']),expected_duration=source.get('duration'),ffprobe_binary=self.ffprobe_binary)
                             source['url']=source.pop('source','');sources.append(source)
@@ -225,6 +228,7 @@ class DouyinService:
         async with self.action_lock:
             if self.job_lock.locked():raise BrowserError('正在处理私信，稍后再玩。')
             await self.open_browser();result=await self.activities.watch()
+            if result.get('skipped'):return result['source']
             return {'verified':True,**result['record']}
 
     async def _autonomous(self):
@@ -237,10 +241,13 @@ class DouyinService:
                 peer=self.binding['peer']['key']
                 choice=await self._text('主动任务触发了：你可以找用户聊天，也可以实际刷一条抖音，或刷完再聊天。只返回JSON：{"action":"chat或browse或browse_and_chat"}。',peer)
                 choice=json.loads(choice.strip().removeprefix('```json').removesuffix('```').strip())
-                mode=choice.get('action');observation=''
+                mode=choice.get('action');observation='';skipped_notice=''
                 if mode in ('browse','browse_and_chat'):
-                    result=await self.explore_once();observation=format_transcript(result['transcript'])
-                    if self.config.get('allow_public_comments'):
+                    result=await self.explore_once()
+                    if result.get('state')=='skipped':result=await self.explore_once()
+                    if result.get('state')=='skipped':skipped_notice=result['message']
+                    else:observation=format_transcript(result['transcript'])
+                    if observation and self.config.get('allow_public_comments'):
                         try:
                             comment=await self._text('你刚实际读取作品：\n'+observation+'\n若想在该作品下留言，直接写1～200字评论；不想评论则只返回 SKIP。',peer)
                             if not self._skip_comment(comment):await self.activities.comment(result['url'],comment)
@@ -250,7 +257,7 @@ class DouyinService:
                             self.last_error='评论失败：'+str(exc)[:240]
                 if mode in ('chat','browse_and_chat'):
                     async with self.job_lock:
-                        text=await self._text('这轮主动找用户自然聊天。'+(('可以聊你刚实际读到的内容：\n'+observation) if observation else '不要虚构自己刚做过的事。'),peer)
+                        text=await self._text('这轮主动找用户自然聊天。'+(('可以聊你刚实际读到的内容：\n'+observation) if observation else '不要虚构自己刚做过的事。')+('\n[未观看的跳过状态]\n'+skipped_notice if skipped_notice else ''),peer)
                         active_job='active-'+uuid4().hex
                         await self.send(active_job,peer,text);self.remember(peer,'assistant',text)
             except asyncio.CancelledError:raise

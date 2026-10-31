@@ -65,7 +65,7 @@ def create_app(data_dir):
             if isinstance(default,str) and not isinstance(value,str):raise BrowserError('文字设置格式不正确。')
             if isinstance(default,list) and (not isinstance(value,list) or not all(isinstance(item,str) for item in value)):
                 raise BrowserError('白名单应为会话标识列表。')
-        for name in ('poll_seconds','merge_seconds','max_download_mb','max_model_video_mb','max_post_images','autonomy_interval_minutes'):
+        for name in ('poll_seconds','merge_seconds','max_download_mb','max_video_duration_seconds','max_model_video_mb','max_post_images','autonomy_interval_minutes'):
             if name in changes:
                 try:changes[name]=int(changes[name])
                 except (ValueError,TypeError):raise BrowserError('间隔或大小应为整数。')
@@ -104,8 +104,10 @@ def create_app(data_dir):
             restart=any(name in changes and changes[name]!=config.get(name) for name in
                         ('node_binary','playwright_package','browser_type','browser_headless','browser_executable','browser_profile'))
             running=bool(service.browser.process and service.browser.process.returncode is None)
-            previous_runtime={'media_dir':old_media,'max_download_mb':config.get('max_download_mb',64)}
-            next_runtime={'media_dir':str(directory),'max_download_mb':changes.get('max_download_mb',config.get('max_download_mb',64))}
+            previous_runtime={'media_dir':old_media,'max_download_mb':config.get('max_download_mb',64),
+                'max_video_duration_seconds':config.get('max_video_duration_seconds',180)}
+            next_runtime={'media_dir':str(directory),'max_download_mb':changes.get('max_download_mb',config.get('max_download_mb',64)),
+                'max_video_duration_seconds':changes.get('max_video_duration_seconds',config.get('max_video_duration_seconds',180))}
             if running and not restart:await service.browser.call('configure',next_runtime)
             config.update(changes)
             try:config.save_config()

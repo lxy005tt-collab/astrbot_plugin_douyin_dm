@@ -16,9 +16,17 @@ class ActivityEngine:
         async with self.lock:
             owner=self.owner
             seen=[key.split(':',1)[1] for (key,) in owner.ledger.db.execute("SELECT key FROM state WHERE key LIKE 'activity:%'").fetchall()]
+            limit=int(owner.config.get('max_video_duration_seconds',180))
+            seen.extend(key.rsplit(':',1)[1] for (key,) in owner.ledger.db.execute(
+                "SELECT key FROM state WHERE key LIKE ?",(f'activity_skip:{limit}:%',)).fetchall())
             source=await owner.browser.call('browse',{'url':url,'seen_ids':seen[-100:],
                 'prefer_images':prefer_images,'info_only':info_only},timeout=180)
             if info_only:return {'source':source}
+            if source.get('state')=='skipped':
+                if source.get('post_id'):
+                    owner.ledger.put(f"activity_skip:{source.get('max_duration_seconds',limit)}:{source['post_id']}",
+                        {'reason':source.get('reason'),'duration':source.get('duration'),'skipped_at':time.time()})
+                return {'skipped':True,'source':source}
             if source.get('path'):
                 source['path']=await prepare_video(source['path'],owner.media_dir,owner.ffmpeg_binary,
                     float(owner.config.get('max_model_video_mb',18)),expected_duration=source.get('duration'),ffprobe_binary=owner.ffprobe_binary)

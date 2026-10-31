@@ -25,6 +25,8 @@ from .runtime import RuntimeEnvironment
 from .setup_api import SetupAPI
 from . import native_activities
 from .mimi_douyin.cache import CacheMaintenance
+from .mimi_douyin.share_request import shared_post_request
+from .conversation_context import ConversationContext
 
 
 def perception_error_frames(exc):
@@ -56,6 +58,13 @@ class MimiDouyinDM(Star):
         self.setup=SetupAPI(self)
         self.activities=native_activities.ActivityEngine(self,transcribe_video)
         self.cache=CacheMaintenance(self,legacy_roots=(self.data_dir.parents[1]/'mimi_douyin/media',))
+        self.context_sharing=ConversationContext(self)
+
+    def session_id(self,peer=None):
+        peer=peer or (self.binding or {}).get('peer',{})
+        if not peer.get('key'):return ''
+        kind='GroupMessage' if peer.get('conversation_type')=='group' else 'FriendMessage'
+        return 'mimi-douyin:'+kind+':'+peer['key']
 
     async def initialize(self):
         self.context.platform_manager.platform_insts.append(self.platform)
@@ -105,7 +114,7 @@ class MimiDouyinDM(Star):
             'video_provider_id':self.config.get('video_provider_id',''),
             'processing_message':bool(self.current_event) or self.job_lock.locked(),
             'media_dir':self.media_dir,'browser_profile':str(self.runtime.profile_dir),
-            'session_id':'mimi-douyin:FriendMessage:'+self.binding['peer']['key'] if self.binding else '',
+            'session_id':self.session_id(),
             'whitelist_enabled':bool(self.config.get('whitelist_enabled',True)),
             'private_whitelist':self.config.get('private_whitelist',[]),
             'recent_jobs':[{'id':r[0],'state':r[1],'updated':r[2]} for r in recent]}
@@ -143,6 +152,7 @@ class MimiDouyinDM(Star):
                 await self.browser.close()
                 result=await self._open_browser();self.state=result['state'];return result
             if action=='inspect':return await self.browser.call('snapshot',{'debug':True})
+            if action=='conversations':return await self.browser.call('conversations')
             if action=='current':
                 snapshot=await self.browser.call('snapshot')
                 return {key:snapshot.get(key) for key in ('ready','reason','peer','direction_proven') if key in snapshot}
@@ -150,7 +160,7 @@ class MimiDouyinDM(Star):
                 snapshot=await self.browser.call('snapshot');self._check_peer(snapshot)
                 video=next((x for x in reversed(snapshot['items']) if x['sender']=='peer' and x['kind']=='video'),None)
                 if not video:raise BrowserError('当前没有对方发来的视频卡片。')
-                return await self.browser.call('download',{'peer_key':snapshot['peer']['key'],'message_key':video['key']},timeout=120)
+                return await self.browser.call('download',shared_post_request(snapshot['peer']['key'],video),timeout=120)
             if action=='probe_transcript':
                 if self.job_lock.locked():raise BrowserError('请等当前私信处理结束。')
                 async with self.job_lock:
@@ -158,6 +168,7 @@ class MimiDouyinDM(Star):
                     item=next((row for row in reversed(snapshot['items']) if row['sender']=='peer' and row['kind']=='video'),None)
                     if not item:raise BrowserError('当前没有对方分享的作品。')
                     source=await self._prepare_video_item(item,snapshot['peer']['key'],1)
+                    if source.get('state')=='skipped':return {**source,'chat_replayed':False}
                     report={'post_id':source.get('post_id'),'kind':source.get('kind'),
                         'image_count':len(source.get('images',[])),'chat_replayed':False}
                     try:
@@ -184,6 +195,7 @@ class MimiDouyinDM(Star):
                 async with self.job_lock:
                     await self._open_browser()
                     result=await self.activities.watch()
+                    if result.get('skipped'):return result['source']
                     return result['record']
             if action=='play_status':
                 star=self.context.get_registered_star('astrbot_plugin_proactive_chat')
@@ -235,7 +247,7 @@ class MimiDouyinDM(Star):
                     return await index_pending_video_memories(self,event)
             if action=='align_persona':
                 if self.current_event:raise BrowserError('请等待当前回复结束。')
-                session='mimi-douyin:FriendMessage:'+self.binding['peer']['key']
+                session=self.session_id()
                 cid=await self.context.conversation_manager.get_curr_conversation_id(session)
                 if cid:
                     await self.context.conversation_manager.update_conversation(
@@ -266,12 +278,15 @@ class MimiDouyinDM(Star):
                 if not snapshot.get('ready'):raise BrowserError(snapshot.get('reason','请打开你们的私信。'))
                 if not snapshot['peer'].get('key') or not snapshot['peer'].get('name'):
                     raise BrowserError('尚未核实当前私信对象，请先打开聊天对象的资料或私信标题。')
+                if snapshot['peer'].get('conversation_type')=='group' and not self.config.get('group_chat_enabled',True):
+                    raise BrowserError('请先在接入设置中开启群聊接入。')
                 if not snapshot.get('direction_proven'):
                     raise BrowserError('尚未从页面确认收发方向，请保持双方已有消息的私信打开。')
                 self.binding={'peer':snapshot['peer'],'bound_at':time.time()}
                 self.ledger.put('binding',self.binding)
-                if not self.config.get('private_whitelist') and not self.ledger.get('whitelist_initialized'):
-                    self.config['private_whitelist']=[snapshot['peer']['key']]
+                whitelist='group_whitelist' if snapshot['peer'].get('conversation_type')=='group' else 'private_whitelist'
+                if snapshot['peer']['key'] not in self.config.get(whitelist,[]):
+                    self.config[whitelist]=[*self.config.get(whitelist,[]),snapshot['peer']['key']]
                     self._save_config();self.ledger.put('whitelist_initialized',True)
                 self.ledger.observe(snapshot['peer']['key'],snapshot['items'],prime=True)
                 self.state='bound_paused';self.last_error=''
@@ -280,7 +295,7 @@ class MimiDouyinDM(Star):
                 if not self.binding:raise BrowserError('请先登录并绑定目标私信会话。')
                 snapshot=await self.browser.call('snapshot')
                 self._check_peer(snapshot)
-                self._check_profile(snapshot['peer']['key'])
+                self._check_profile(snapshot['peer']['key'],snapshot['peer'])
                 self.config['auto_reply_enabled']=True;self._save_config()
                 self.platform.status=PlatformStatus.RUNNING
                 self.state='listening';return self.status()
@@ -296,15 +311,21 @@ class MimiDouyinDM(Star):
     def _check_peer(self,snapshot):
         if not snapshot.get('ready'):raise BrowserError(snapshot.get('reason','私信页面尚未就绪。'))
         if not self.binding:raise BrowserError('请先绑定目标私信会话。')
-        self._check_whitelist(snapshot['peer']['key'])
+        if snapshot['peer']['key']!=self.binding['peer']['key']:
+            raise BrowserError('当前打开的会话与绑定对象不同，请回到已绑定会话，或暂停后重新绑定。')
+        self._check_whitelist(snapshot['peer']['key'],snapshot['peer'])
         if not snapshot.get('direction_proven'):raise BrowserError('当前页面无法确认消息的收发方向。')
 
-    def _check_whitelist(self,peer_key):
-        if self.config.get('whitelist_enabled',True) and peer_key not in self.config.get('private_whitelist',[]):
+    def _check_whitelist(self,peer_key,peer=None):
+        peer=peer or (self.binding or {}).get('peer',{})
+        group=peer.get('conversation_type')=='group'
+        if group and not self.config.get('group_chat_enabled',True):raise BrowserError('群聊接入已关闭。')
+        whitelist='group_whitelist' if group else 'private_whitelist'
+        if self.config.get('whitelist_enabled',True) and peer_key not in self.config.get(whitelist,[]):
             raise BrowserError('当前私信对象不在白名单中，不调用模型或发送回复。')
 
-    def _check_profile(self,peer_key):
-        umo='mimi-douyin:FriendMessage:'+peer_key
+    def _check_profile(self,peer_key,peer=None):
+        umo=self.session_id(peer)
         config=self.context.get_config(umo)
         if not uses_text_transcription(self.config) and config.get('agent_runner',{}).get('config',{}).get('model',{}).get('fallback_provider_ids'):
             raise BrowserError('直接处理视频时，请使用支持视频的聊天配置，并关闭不支持视频的备用模型。')
@@ -337,11 +358,24 @@ class MimiDouyinDM(Star):
 
     async def _handle(self,items,peer):
         async with self.job_lock:
-            await self._process_items(items,peer)
+            if peer.get('conversation_type')!='group':
+                await self._process_items(items,peer);return
+            batches=[]
+            for item in items:
+                sender=item.get('sender_id')
+                if not sender:continue
+                if batches and batches[-1][-1].get('sender_id')==sender:batches[-1].append(item)
+                else:batches.append([item])
+            for batch in batches:
+                if self.config.get('group_reply_mode','仅@机器人')=='仅@机器人':
+                    names=self.config.get('group_mention_names',[])
+                    addressed=any(item.get('mentioned_bot') or any(re.search(r'@'+re.escape(name)+r'(?:\s|$)',item.get('text','')) for name in names) for item in batch)
+                    if not addressed:continue
+                await self._process_items(batch,peer)
 
     async def _process_items(self,items,peer):
-        peer_key=peer['key'];self._check_whitelist(peer_key)
-        self._check_profile(peer_key)
+        peer_key=peer['key'];self._check_whitelist(peer_key,peer)
+        self._check_profile(peer_key,peer)
         job_id=uuid.uuid4().hex
         details={'message_keys':[x['key'] for x in items],'kinds':[x['kind'] for x in items]}
         self.ledger.job(job_id,'queued',details)
@@ -351,10 +385,16 @@ class MimiDouyinDM(Star):
         for item in video_items:
             try:
                 source=await self._prepare_video_item(item,peer_key,len(video_items))
+                if source.get('state')=='skipped':
+                    media_receipts.append({'state':'skipped','reason':source.get('reason'),
+                        'duration':source.get('duration'),'max_duration_seconds':source.get('max_duration_seconds')})
+                    errors.append(source['message'])
+                    continue
                 if source.get('path'):videos.append(source['path'])
                 video_sources.append(source)
                 media_receipts.append({'state':'downloaded','kind':source.get('kind','video'),
-                    'post_id':source.get('post_id'),'image_count':len(source.get('images',[]))})
+                    'post_id':source.get('post_id'),'image_count':len(source.get('images',[])),
+                    'share_lookup':source.get('share_lookup')})
             except (BrowserError,OSError,asyncio.TimeoutError) as exc:
                 reason=re.sub(r'https?://\S+','[媒体地址]',str(exc))[:400]
                 media_receipts.append({'state':'failed','error_type':type(exc).__name__,'reason':reason})
@@ -407,7 +447,7 @@ class MimiDouyinDM(Star):
                 logger.warning('[与bot刷抖音] 本轮视频回复已处理，观看回忆暂未保存：%s',type(exc).__name__)
 
     async def _prepare_video_item(self,item,peer_key,count):
-        source=await self.browser.call('download',{'peer_key':peer_key,'message_key':item['key']},timeout=120)
+        source=await self.browser.call('download',shared_post_request(peer_key,item),timeout=120)
         if source.get('path'):
             source['path']=await prepare_video(source['path'],self.media_dir,self.ffmpeg_binary,
                 max(1,float(self.config.get('max_model_video_mb',18))/max(1,count)),expected_duration=source.get('duration'),
@@ -442,7 +482,8 @@ class MimiDouyinDM(Star):
         outbox=self.ledger.outbox(job_id,text)
         if outbox is None:raise BrowserError('这段回复已经提交过，不重复发送。')
         try:
-            receipt=await self.browser.call('send',{'peer_key':peer_key,'text':text},timeout=20)
+            receipt=await self.browser.call('send',{'peer_key':peer_key,'text':text,
+                'conversation_type':self.current_event.message_obj.raw_message.get('conversation_type','private')},timeout=20)
         except BrowserError as exc:receipt={'state':'unknown','receipt':'browser_error','error':str(exc)}
         except ConnectionError:receipt={'state':'unknown','receipt':'browser_connection_lost'}
         self.ledger.put(outbox,receipt);self.ledger.job(job_id,receipt['state'])
@@ -457,6 +498,10 @@ class MimiDouyinDM(Star):
             req.extra_user_content_parts.append(TextPart(text='这是与用户在抖音的私聊。本轮用户分享的实际视频和音轨会作为原生视频输入附加；结合实际画面和声音自然回应，不把封面标题当作已观看内容，不输出分析或操作报告。').mark_as_temp())
         for error in event.get_extra('douyin_video_errors',[]):
             req.extra_user_content_parts.append(TextPart(text=error).mark_as_temp())
+
+    @filter.on_llm_request(priority=-maxsize)
+    async def linked_conversation_context(self,event,req):
+        await self.context_sharing.inject(event,req)
 
     @filter.on_llm_request(priority=maxsize+5)
     async def douyin_activity_guide(self,event,req):
@@ -473,11 +518,11 @@ class MimiDouyinDM(Star):
                     req.func_tool.remove_tool('douyin_comment_watched')
         if permitted:
             state='当前评论开关开启。' if self.config.get('allow_public_comments',False) else '当前评论开关关闭，只浏览和聊天，不尝试评论。'
-            req.extra_user_content_parts.append(TextPart(text='想刷抖音时可调用 douyin_watch_recommended：实际读取一条推荐作品，或传入具体作品链接。不要只凭打开页面、标题或自己的计划宣称看过。读完后可继续聊天；评论使用 douyin_comment_watched，只有返回 sent 和 comment_id 才能宣称发出。'+state).mark_as_temp())
+            req.extra_user_content_parts.append(TextPart(text='想刷抖音时可调用 douyin_watch_recommended：实际读取一条推荐作品，或传入具体作品链接。不要只凭打开页面、标题或自己的计划宣称看过。如果返回 state=skipped，说明时长超限或无法确认，未下载、未观看；按返回提示换一个新视频，可再次调用并将 url 留空。读完后可继续聊天；评论使用 douyin_comment_watched，只有返回 sent 和 comment_id 才能宣称发出。'+state).mark_as_temp())
 
     @filter.llm_tool(name='douyin_watch_recommended')
     async def douyin_watch_recommended(self,event:AstrMessageEvent,url:str='')->str:
-        """实际读取一条抖音推荐作品或指定作品，返回画面、声音、图文原图与文案的转述。
+        """实际读取一条抖音推荐作品或指定作品，返回内容转述。state=skipped 表示时长限制跳过，未下载未观看；请换另一条，可再次调用并将 url 留空。
 
         Args:
             url(string): 留空选择一条真实推荐作品，或填写具体的抖音作品链接。

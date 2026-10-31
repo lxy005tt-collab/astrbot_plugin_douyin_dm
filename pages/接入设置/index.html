@@ -5,13 +5,86 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>抖音接入设置</title>
   <link rel="stylesheet" href="./style.css">
-  <script src="./app.js" defer></script>
+  <script src="./app.js?v=0.5.0" defer></script>
 </head>
 <body>
 <main>
-  <header><div><h1>抖音接入设置</h1><p>选择视频保存位置，检查依赖，再登录和绑定私信。</p></div><button id="refresh" type="button">重新检测</button></header>
-  <p id="notice" role="status" aria-live="polite"></p>
-  <section>
+<header><div><h1>抖音接入</h1><p>连接会话，延续对话。</p></div><button id="refresh" type="button">刷新状态</button></header>
+<nav class="tabs" role="tablist" aria-label="设置分类">
+<button role="tab" id="tab-connect" aria-selected="true" aria-controls="panel-connect" data-panel="connect">会话接入</button>
+<button role="tab" id="tab-context" aria-selected="false" aria-controls="panel-context" data-panel="context">上下文与记忆</button>
+<button role="tab" id="tab-media" aria-selected="false" aria-controls="panel-media" data-panel="media">视频与缓存</button>
+</nav><p id="notice" role="status" aria-live="polite"></p>
+<div id="panel-connect" role="tabpanel" aria-labelledby="tab-connect">  <section>
+    <h2>会话接入</h2>
+<button id="save-connection" class="primary" type="button">保存接入设置</button>
+    <label><input id="group-enabled" type="checkbox" checked> 允许绑定抖音群聊</label>
+    <label for="group-reply-mode">群聊回复方式</label>
+    <select id="group-reply-mode"><option>仅@机器人</option><option>所有新消息</option></select>
+    <label for="group-mention-names">机器人在群内的昵称（多个昵称用逗号分隔）</label>
+    <input id="group-mention-names" placeholder="仅用于文字 @ 匹配，可填写群内显示昵称">
+    <label><input id="group-share-qq-memory" type="checkbox"> 群聊读取所选 QQ 对话与记忆（默认关闭）</label>
+    <p class="detail">开启后仍需在“上下文与记忆”中明确选择要参考的 QQ 私聊或 QQ 群对话。私人对话只向群聊单向提供参考；群内新发言仍按群成员记录，不写成该 QQ 用户的个人记忆。</p>
+    <p class="detail">私聊和群聊分别使用白名单，群成员分别识别。保存上方设置后生效；仅处理当前打开并明确绑定的会话，不轮巡所有聊天。</p>
+    <div class="row"><select id="douyin-conversations" aria-label="抖音会话"></select><button id="list-douyin-conversations" type="button">刷新抖音会话列表</button><button id="select-douyin-conversation" type="button">打开所选会话</button></div>
+    <p>请在<strong>本页打开的专用浏览器窗口</strong>中操作。你平时用的浏览器即使已经登录、打开了私信，也不代表插件已经连接。</p>
+    <ol>
+      <li>在插件配置中选择聊天和视频转述模型。聊天模型、人格留空时沿用 AstrBot 当前配置，再确认上方依赖可用。</li>
+      <li>点击“打开登录窗口”，在弹出的窗口中登录<strong>机器人的抖音账号</strong>，完成可能出现的验证码。</li>
+      <li>在同一窗口点击抖音的“消息”，再点开要回复的用户或群聊，直到能看到聊天记录和输入框。只打开首页或消息列表还不够。</li>
+      <li>首次接入时，目标会话里需要有双方的消息。如果机器人账号从未发过消息，请先在这个窗口手动回一条普通文字，便于确认收发方向。</li>
+      <li>回到本页点击“绑定当前会话”，核对下方对象名称，再点“开启回复”。绑定时只记录已有历史，旧消息不会补回。</li>
+      <li>用<strong>自己的账号</strong>在所选会话发一条新的纯文字消息；确认能回复后，再分享视频或图文。</li>
+    </ol>
+    <p id="models" class="detail"></p>
+    <p id="bot-state"></p>
+    <div class="row"><button data-action="open" type="button">打开登录窗口</button><button data-action="bind" type="button">绑定当前会话</button><button data-action="start" class="primary" type="button">开启回复</button><button data-action="pause" type="button">暂停回复</button><button id="reopen" type="button">重开登录窗口</button></div>
+    <p class="detail">日常使用不必重复绑定，也不用一直把浏览器放在前台；请保持专用窗口里的目标会话打开。需要更新本页状态时，点右上角“刷新状态”。</p>
+    <details><summary>关闭窗口后怎么恢复？为什么还没有回复？</summary>
+      <p><strong>只关了私信面板：</strong>在专用窗口重新点击“消息”并进入已绑定的会话，回本页重新检测。回复已暂停时再点“开启回复”；同一对象不必重新绑定。</p>
+      <p><strong>整个专用窗口都关了：</strong>回本页点“重开登录窗口”。程序会尝试恢复已绑定的会话；没有恢复时，请手动进入目标会话，确认对象后再开启回复。请勿仅凭浏览器弹出，就认为私信已经就绪。</p>
+      <p><strong>显示“正在处理消息”：</strong>视频、图文会先下载和识别，再生成回复，比纯文字耗时更长。期间可能临时打开作品标签页，正常结束后会关闭这个临时页；请保留原来的私信页。请稍候并重新检测状态，不要反复绑定或重开窗口。</p>
+      <p><strong>只显示“回复开关已开启”或有错误提示：</strong>还需按提示完成登录、验证码或进入目标会话。显示“正在监听新消息”后，用自己的账号发送一条新消息验证；旧消息不会补回。</p>
+      <p><strong>要换账号或会话对象：</strong>先暂停回复，进入新的目标会话，再绑定并核对白名单，最后开启回复。</p>
+    </details>
+    <p id="session" class="detail code"></p>
+    <p id="optional-memory" class="detail"></p>
+  </section><details class="advanced"><summary>运行依赖</summary>  <section>
+    <h2>运行依赖</h2>
+    <p>自动检测现有程序。不会在启动时偷偷下载依赖，也不需要其他浏览器插件。</p>
+    <div class="table-wrap"><table><thead><tr><th>组件</th><th>状态</th><th>检测到的位置</th></tr></thead><tbody id="dependencies"></tbody></table></div>
+    <div class="row"><button id="install-playwright" type="button">安装插件浏览器依赖</button><button id="install-chromium" type="button">下载插件 Chromium</button></div>
+    <p class="detail" id="install-state"></p>
+    <details><summary>检测不到已有程序？</summary><p>可以在插件配置中填写 Node、FFmpeg、FFprobe、浏览器程序或 Playwright 的路径；留空则自动查找。模型接口也在插件配置中选择，不需要填写别人的模型 ID。</p></details>
+  </section></details><details class="advanced"><summary>自主浏览与评论</summary>  <section>
+    <h2>自己刷抖音</h2>
+    <label><input id="autonomy" type="checkbox"> 允许机器人自己刷抖音</label>
+    <p class="detail">向已绑定的会话和现有主动回复提供实际观看工具，由模型选择聊天、刷作品或看完再聊，不新增定时任务。</p>
+    <label><input id="public-comments" type="checkbox"> 允许在实际读过的作品下发表评论</label>
+    <p class="detail">评论会发到抖音公开评论区。改变开关后点击上方“保存设置”。</p>
+    <button data-action="watch_recommended" type="button">实际读一条推荐作品</button>
+    <pre id="activity-observation" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+  </section></details></div><div id="panel-context" role="tabpanel" aria-labelledby="tab-context" hidden>  <section>
+    <h2>关联已有对话与共享上下文</h2>
+    <p>先绑定抖音会话，再选择已有的 AstrBot 对话。切换平台后可接续之前的话题；聊天记录分别保存，关联不会覆盖或搬动旧记录。</p>
+    <p id="context-source" class="detail"></p>
+    <label><input id="context-enabled" type="checkbox" checked> 读取已关联渠道的近期上下文</label>
+    <label for="context-messages">最多读取多少条消息</label><input id="context-messages" type="number" min="1" max="100" value="8">
+    <label for="context-age">会话活跃时限（小时）</label><input id="context-age" type="number" min="0" max="8760" value="48">
+    <p class="detail">另一渠道会话超过此时间没有更新时不读取；0 表示不限制活跃时限。</p>
+    <label for="context-chars">每条消息最多读取多少字</label><input id="context-chars" type="number" min="100" max="10000" value="600">
+    <label for="context-total">一次共享的总字数上限</label><input id="context-total" type="number" min="1000" max="100000" value="12000">
+    <button id="save-context-settings" class="primary" type="button">保存上下文设置</button>
+    <label for="context-search">查找已有对话</label><input id="context-search" type="search" placeholder="输入对话标题或会话标识">
+    <label for="context-conversation">选择已有 AstrBot 对话</label><select id="context-conversation"></select>
+    <button id="refresh-context-conversations" type="button">刷新可选对话</button>
+    <label><input id="context-bidirectional" type="checkbox" checked> 双向参考近期上下文</label>
+    <p id="context-direction" class="detail"></p>
+    <label><input id="context-memory" type="checkbox"> 参考长期记忆（需要 LivingMemory；私聊共用，群聊只读）</label>
+    <p class="detail">默认私聊关联私聊，群聊关联群聊。管理员开启群聊读取 QQ 记忆后，群聊也可单向参考所选私聊。近期上下文的开关、条数与活跃时限不限制长期记忆检索，也不会删除已有记忆。</p>
+    <button id="save-context-link" class="primary" type="button">关联所选对话</button>
+    <div id="context-links"></div>
+  </section></div><div id="panel-media" role="tabpanel" aria-labelledby="tab-media" hidden>  <section>
     <h2>视频保存位置</h2>
     <p>选择的是运行 AstrBot 的电脑或容器中的目录。</p>
     <label for="media-dir">保存目录</label>
@@ -22,6 +95,9 @@
     <label for="max-download">单条作品下载上限（MB）</label>
     <input id="max-download" type="number" min="1" max="10000" step="1" value="64">
     <p class="detail">限制一条作品的原视频或全部原图总大小。遇到“作品媒体总大小超过下载设置”时，可在这里调大，保存后立即生效。</p>
+    <label for="max-video-duration">单条视频时长上限（秒）</label>
+    <input id="max-video-duration" type="number" min="0" max="10000" step="1" value="180">
+    <p class="detail">默认 180 秒（3 分钟），0 表示不限时长。超过上限，或开启限制时无法确认时长的视频，不下载并提示 bot 换一个；图文不受此项限制。保存后立即用于新下载。</p>
     <label><input id="cache-cleanup" type="checkbox"> 定时清理媒体缓存</label>
     <label for="cleanup-hours">每隔多少小时清理一次</label><input id="cleanup-hours" type="number" min="1" max="10000" step="1" value="24">
     <label for="retention-hours">保留最近多少小时的缓存</label><input id="retention-hours" type="number" min="0" max="10000" step="1" value="24">
@@ -30,35 +106,8 @@
     <label for="browser-type">登录浏览器</label>
     <select id="browser-type"><option>自动选择</option><option>Edge</option><option>Chrome</option><option>Chromium</option></select>
     <p class="detail">自动选择优先使用已安装的 Edge 或 Chrome。首次扫码需要图形桌面；容器请先配置桌面或 VNC/X11。</p>
-    <button id="reopen" type="button" hidden>重开登录窗口以应用浏览器选择</button>
-  </section>
-  <section>
-    <h2>运行依赖</h2>
-    <p>自动检测现有程序。不会在启动时偷偷下载依赖，也不需要其他浏览器插件。</p>
-    <div class="table-wrap"><table><thead><tr><th>组件</th><th>状态</th><th>检测到的位置</th></tr></thead><tbody id="dependencies"></tbody></table></div>
-    <div class="row"><button id="install-playwright" type="button">安装插件浏览器依赖</button><button id="install-chromium" type="button">下载插件 Chromium</button></div>
-    <p class="detail" id="install-state"></p>
-    <details><summary>检测不到已有程序？</summary><p>可以在插件配置中填写 Node、FFmpeg、FFprobe、浏览器程序或 Playwright 的路径；留空则自动查找。模型接口也在插件配置中选择，不需要填写别人的模型 ID。</p></details>
-  </section>
-  <section>
-    <h2>自己刷抖音</h2>
-    <label><input id="autonomy" type="checkbox"> 允许机器人自己刷抖音</label>
-    <p class="detail">向已绑定的私信和现有主动回复提供实际观看工具，由模型选择聊天、刷作品或看完再聊，不新增定时任务。</p>
-    <label><input id="public-comments" type="checkbox"> 允许在实际读过的作品下发表评论</label>
-    <p class="detail">评论会发到抖音公开评论区。改变开关后点击上方“保存设置”。</p>
-    <button data-action="watch_recommended" type="button">实际读一条推荐作品</button>
-    <pre id="activity-observation" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
-  </section>
-  <section>
-    <h2>首次连接</h2>
-    <ol><li>在插件配置选择视频转述模型；聊天模型和人格留空可沿用 AstrBot 当前默认配置。</li><li>检查上方依赖，打开登录窗口，登录机器人账号并进入目标私信。</li><li>点击“绑定当前私信”，核对对象，再开启回复。旧消息不会补发。</li></ol>
-    <p id="models" class="detail"></p>
-    <p id="bot-state"></p>
-    <div class="row"><button data-action="open" type="button">打开登录窗口</button><button data-action="bind" type="button">绑定当前私信</button><button data-action="start" class="primary" type="button">开启回复</button><button data-action="pause" type="button">暂停回复</button></div>
-    <p id="session" class="detail code"></p>
-    <p id="optional-memory" class="detail"></p>
-  </section>
-</main>
+    <p class="detail">切换登录浏览器后，先保存设置，再到“会话接入”点击“重开登录窗口”使选择生效。</p>
+  </section></div></main>
 <dialog id="folder-dialog">
   <h2>选择视频保存目录</h2><p>浏览服务器目录，选中后点击“使用此目录”。</p>
   <div class="row"><input id="folder-path" aria-label="目录路径"><button id="folder-go" type="button">打开</button></div>

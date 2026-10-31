@@ -4,6 +4,20 @@ import {randomUUID} from 'node:crypto';
 import {openBackgroundPage} from './browser_actions.mjs';
 import {getCommentEditor,getCommentSubmit,captureEmptyCommentControls} from './comment_ui.mjs';
 
+export function videoDurationDecision(duration, maxSeconds=180) {
+  const limit=Number(maxSeconds);
+  if(!Number.isInteger(limit)||limit<0||limit>10000)throw new Error('视频时长上限应为 0～10000 秒。');
+  if(limit===0)return null;
+  const known=Number.isFinite(duration)&&duration>0;
+  if(known&&duration<=limit)return null;
+  const reason=known?'duration_limit':'duration_unknown';
+  const message=known
+    ?`这条视频时长约 ${Math.ceil(duration)} 秒，超过当前 ${limit} 秒上限，已跳过下载，未观看。请换一个不超过上限的新视频。`
+    :`这条视频暂时无法确认时长，当前上限为 ${limit} 秒，已跳过下载，未观看。请换一个能确认时长的新视频。`;
+  return {state:'skipped',reason,downloaded:false,verified:false,
+    duration:known?duration:null,max_duration_seconds:limit,retry_action:'choose_another_video',message};
+}
+
 export function postImages(detail) {
   const images=Array.isArray(detail?.images)&&detail.images.length?detail.images:detail?.image_post_info?.images;
   if(!Array.isArray(images))return [];
@@ -121,12 +135,13 @@ export async function readPost(args,environment) {
     }
     if(!detail?.video && /\/note\//.test(tab.url()))throw new Error('图文详情没有返回原图，未用封面代替。');
     await tab.waitForFunction(()=>[...document.querySelectorAll('video')].some(video=>video.currentSrc&&video.readyState>=1),undefined,{timeout:20000});
-    const probe=await tab.evaluate(async()=>{
+    const probe=await tab.evaluate(()=>{
       const video=[...document.querySelectorAll('video')].filter(item=>item.currentSrc&&item.readyState>=1)
         .sort((a,b)=>b.getBoundingClientRect().width*b.getBoundingClientRect().height-a.getBoundingClientRect().width*a.getBoundingClientRect().height)[0];
-      try{await video.play();}catch{}
       return {url:video.currentSrc,duration:video.duration,title:document.title};
     });
+    const skipped=videoDurationDecision(probe.duration,settings.max_video_duration_seconds??180);
+    if(skipped)return {...info,...skipped,title:probe.title};
     await tab.waitForTimeout(1200);
     const playURL=detail?.video?.play_addr?.url_list?.find(value=>value.startsWith('https:'));
     const assetURL=playURL||(probe.url.startsWith('https:')?probe.url:media.at(-1));

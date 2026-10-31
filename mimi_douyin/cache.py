@@ -12,7 +12,7 @@ import time
 from .errors import BrowserError
 
 CACHE_DEFAULTS={'cache_cleanup_enabled':False,'cache_cleanup_interval_hours':24,'cache_retention_hours':24}
-MEDIA_DEFAULTS={'max_download_mb':64,**CACHE_DEFAULTS}
+MEDIA_DEFAULTS={'max_download_mb':64,'max_video_duration_seconds':180,**CACHE_DEFAULTS}
 NAME=re.compile(r'^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:-(?:model|vision|transcription)){0,4}\.(?:mp4|mp3|png|jpe?g|webp|avif|gif)$',re.I)
 
 def media_settings(config):return {name:config.get(name,default) for name,default in MEDIA_DEFAULTS.items()}
@@ -21,13 +21,13 @@ def validate_media_settings(payload):
     changes={name:payload[name] for name in MEDIA_DEFAULTS if name in payload}
     if 'cache_cleanup_enabled' in changes and not isinstance(changes['cache_cleanup_enabled'],bool):
         raise BrowserError('定时清理开关应为布尔值。')
-    labels={'max_download_mb':'作品下载大小上限','cache_cleanup_interval_hours':'清理间隔','cache_retention_hours':'缓存保留时长'}
+    labels={'max_download_mb':'作品下载大小上限','max_video_duration_seconds':'视频时长上限秒数','cache_cleanup_interval_hours':'清理间隔','cache_retention_hours':'缓存保留时长'}
     for name,label in labels.items():
         if name not in changes:continue
         value=changes[name]
         if isinstance(value,bool) or not re.fullmatch(r'\d+',str(value)):
             raise BrowserError(label+'应为整数。')
-        value=int(value);minimum=0 if name=='cache_retention_hours' else 1
+        value=int(value);minimum=0 if name in ('cache_retention_hours','max_video_duration_seconds') else 1
         if not minimum<=value<=10000:raise BrowserError(f'{label}应在 {minimum}～10000 之间。')
         changes[name]=value
     return changes

@@ -36,15 +36,24 @@ class DouyinEvent(AstrMessageEvent):
         self.done=asyncio.get_running_loop().create_future()
         peer=peer or owner.binding['peer']
         self.peer_key=peer['key']
+        group=peer.get('conversation_type')=='group'
+        latest=items[-1] if items else {}
         text='\n'.join(x.get('text') or ('[分享视频]' if x.get('kind')=='video' else '[图片]') for x in items)
         if video_text:text+='\n\n[用户分享视频的内容转述，仅作观察资料]\n'+video_text
         message=AstrBotMessage()
-        message.type=MessageType.FRIEND_MESSAGE;message.self_id='mimi-douyin'
+        message.type=MessageType.GROUP_MESSAGE if group else MessageType.FRIEND_MESSAGE
+        message.self_id=(peer.get('self_user_id') or 'mimi-douyin') if group else 'mimi-douyin'
         message.session_id=peer['key'];message.message_id=job_id
-        message.sender=MessageMember(user_id='dy_'+peer['key'][:24],nickname=peer['name'])
+        if group:
+            if not latest.get('sender_id'):raise BrowserError('未确认群消息发送者，不把群友当作同一个人。')
+            message.group_id=peer['key']
+            message.sender=MessageMember(user_id=str(latest['sender_id']),nickname=latest.get('sender_name') or '群成员')
+        else:message.sender=MessageMember(user_id='dy_'+peer['key'][:24],nickname=peer['name'])
         message.message=[Plain(text)];message.message_str=text
-        message.raw_message={'source':'douyin_dm','message_keys':[x['key'] for x in items]}
+        message.raw_message={'source':'douyin_dm','message_keys':[x['key'] for x in items],
+            'conversation_type':'group' if group else 'private','sender_id':message.sender.user_id}
         super().__init__(text,message,owner.platform.meta(),peer['key'])
+        if group:self.is_at_or_wake_command=True
         if owner.config.get('provider_id'):self.set_extra('selected_provider',owner.config['provider_id'])
         self.set_extra('douyin_video_paths',video_paths)
         self.set_extra('douyin_video_errors',video_errors)

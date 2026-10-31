@@ -201,5 +201,80 @@
     "default": 24,
     "description": "缓存保留时长（小时）",
     "hint": "只清理保存时间超过此时长的缓存；0 表示清理全部已经用完的缓存。"
+  },
+  "max_video_duration_seconds": {
+    "type": "int",
+    "default": 180,
+    "description": "单条视频时长上限（秒）",
+    "hint": "默认 180 秒（3 分钟）；0 表示不限。下载前检查，超限或无法确认时长时跳过并提示 bot 换一个。仅限制视频，不限制图文。"
+  },
+  "group_chat_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "允许绑定抖音群聊"
+  },
+  "group_reply_mode": {
+    "type": "string",
+    "default": "仅@机器人",
+    "description": "群聊回复方式",
+    "options": [
+      "仅@机器人",
+      "所有新消息"
+    ]
+  },
+  "group_mention_names": {
+    "type": "list",
+    "default": [],
+    "description": "机器人群昵称",
+    "hint": "用于文字 @ 匹配；多个昵称分别填写。"
+  },
+  "group_whitelist": {
+    "type": "list",
+    "default": [],
+    "description": "群聊白名单",
+    "hint": "绑定群聊时添加会话标识；与私聊白名单分开。"
+  },
+  "shared_context": {
+    "type": "object",
+    "description": "共享上下文范围",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "default": true,
+        "description": "启用共享上下文"
+      },
+      "max_messages": {
+        "type": "int",
+        "default": 8,
+        "description": "每渠道最多消息数"
+      },
+      "max_age_hours": {
+        "type": "int",
+        "default": 48,
+        "description": "会话活跃时限（小时，0不限）"
+      },
+      "max_chars_per_message": {
+        "type": "int",
+        "default": 600,
+        "description": "每条消息字数上限"
+      },
+      "max_total_chars": {
+        "type": "int",
+        "default": 12000,
+        "description": "共享上下文总字数上限"
+      }
+    }
+  },
+  "conversation_links": {
+    "type": "list",
+    "default": [],
+    "description": "关联已有对话",
+    "hint": "请在接入设置页选择已有 AstrBot 对话，支持双向近期上下文与可选私聊长期记忆关联。"
+  },
+  "group_share_qq_memory": {
+    "type": "bool",
+    "default": false,
+    "description": "群聊读取所选 QQ 对话与记忆",
+    "hint": "默认关闭。开启后需明确关联目标对话；群内新发言不写入 QQ 用户的个人记忆。"
   }
 }

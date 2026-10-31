@@ -1,7 +1,7 @@
 name: astrbot_plugin_douyin_dm
 display_name: 与bot刷抖音
 author: vivi
-version: 0.4.5
-desc: 在抖音私信中与 bot 聊天、读取视频与图文及作品简介，支持白名单、自主浏览、可选评论、下载限额和定时缓存清理。
+version: 0.5.0
+desc: 在抖音私聊和群聊中与 bot 聊天、读取视频与图文及作品简介，支持白名单、自主浏览、可选评论、下载限额和定时缓存清理。
 repo: https://github.com/lxy005tt-collab/astrbot_plugin_douyin_dm
 astrbot_version: ">=4.29.0"

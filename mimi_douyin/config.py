@@ -8,7 +8,7 @@ DEFAULTS={
     'enabled':True,'auto_reply_enabled':False,'whitelist_enabled':True,'private_whitelist':[],
     'media_dir':'','browser_profile':'','browser_type':'自动选择','browser_headless':False,
     'node_binary':'','playwright_package':'','browser_executable':'','ffmpeg_binary':'','ffprobe_binary':'',
-    'poll_seconds':4,'merge_seconds':3,'max_download_mb':64,'max_model_video_mb':18,'max_post_images':30,
+    'poll_seconds':4,'merge_seconds':3,'max_download_mb':64,'max_video_duration_seconds':180,'max_model_video_mb':18,'max_post_images':30,
     'video_provider_id':'video','video_input_mode':'转述为文本','video_separate_audio':True,
     'video_transcription_timeout_seconds':90,'video_transcription_prompt':'',
     'api_base':'','api_key':'','model':'','video_api_base':'','video_api_key':'','video_model':'',

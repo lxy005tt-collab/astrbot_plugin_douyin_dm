@@ -8,7 +8,7 @@ from .video_transcription import transcribe_video,format_transcript
 def allowed(owner,event):
     if not owner.config.get('enabled',True) or not owner.config.get('autonomy_enabled',False):return False
     if event.is_private_chat() and event.is_admin():return True
-    return bool(owner.binding and event.unified_msg_origin=='mimi-douyin:FriendMessage:'+owner.binding['peer']['key'])
+    return bool(owner.binding and event.unified_msg_origin==owner.session_id())
 
 class _MemoryEvent:
     def __init__(self,event,transcript):self.event=event;self.transcript=transcript
@@ -21,6 +21,13 @@ async def watch(owner,event,url=''):
     async with owner.action_lock:
         await owner._open_browser()
         result=await owner.activities.watch(url)
+        if result.get('skipped'):
+            source=result['source']
+            skipped=event.get_extra('douyin_skipped_posts',[])
+            skipped.append({'post_id':source.get('post_id'),'reason':source.get('reason')})
+            event.set_extra('douyin_skipped_posts',skipped[-10:])
+            return json.dumps({**source,'verified':False,
+                'next_step':'换一个视频：可再次调用 douyin_watch_recommended，并将 url 留空以选择另一条推荐作品。不要继续下载本条，也不要把它当作已看过。'},ensure_ascii=False)
         record=result['record'];text=format_transcript(record['transcript'])
         event.set_extra('douyin_activity_receipt',{**record,'excerpt':text})
         facts=event.get_extra('activity_report_tools',[])

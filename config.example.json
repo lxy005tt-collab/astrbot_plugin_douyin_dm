@@ -10,5 +10,6 @@
   "auto_reply_enabled": false,
   "autonomy_enabled": false,
   "allow_public_comments": false,
-  "autonomy_interval_minutes": 30
+  "autonomy_interval_minutes": 30,
+  "max_video_duration_seconds": 180
 }

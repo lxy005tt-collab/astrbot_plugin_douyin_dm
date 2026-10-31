@@ -68,7 +68,9 @@ class BrowserWorker:
     async def open(self,peer=None):
         return await self.call('open',{'profile':self.config['browser_profile'],
             'media_dir':self.config['media_dir'],'playwright_package':self.config['playwright_package'],
-            'max_download_mb':self.config.get('max_download_mb',64),'max_post_images':self.config.get('max_post_images',30),'restore_peer':peer,
+            'max_download_mb':self.config.get('max_download_mb',64),
+            'max_video_duration_seconds':self.config.get('max_video_duration_seconds',180),
+            'max_post_images':self.config.get('max_post_images',30),'restore_peer':peer,
             'browser_channel':self.config.get('browser_channel',''),
             'browser_executable':self.config.get('browser_executable',''),
             'headless':bool(self.config.get('browser_headless',False))},timeout=90)
