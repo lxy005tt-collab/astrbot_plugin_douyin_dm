@@ -30,6 +30,8 @@
     $('autonomy').checked=!!data.autonomy_enabled;
     $('public-comments').checked=!!data.allow_public_comments;
     $('group-enabled').checked=data.group_chat_enabled!==false;
+    $('auto-switch').checked=!!data.auto_switch_enabled;
+    $('account-display-name').value=data.account_display_name||'';
     $('group-reply-mode').value=data.group_reply_mode||'仅@机器人';
     $('group-mention-names').value=(data.group_mention_names||[]).join(', ');
     $('group-share-qq-memory').checked=!!data.group_share_qq_memory;
@@ -38,7 +40,7 @@
     $('models').textContent='聊天模型：'+data.models.chat+'；视频转述模型：'+data.models.video;
     const bot=data.bot;
     const phase=!bot.auto_reply_enabled?'回复已暂停':bot.processing_message?'正在处理消息（分享内容会先下载和识别，请稍候）':bot.state==='listening'&&!bot.last_error?'正在监听新消息':'回复开关已开启，等待聊天页面就绪';
-    $('bot-state').textContent='状态：'+phase+'；绑定对象：'+(bot.binding?.peer?.name||'尚未绑定')+(bot.last_error?'；'+bot.last_error:'');
+    $('bot-state').textContent='状态：'+phase+(bot.auto_switch_enabled?' · 白名单自动切换':' · 固定会话')+'；当前对象：'+(bot.binding?.peer?.name||'尚未绑定')+(bot.last_error?'；'+bot.last_error:'');
     $('session').textContent=bot.session_id?'会话标识：'+bot.session_id:'';
     $('optional-memory').textContent=data.optional_memory_available?'LivingMemory（长期记忆插件）已启用。近期上下文无需依赖它；共享长期记忆时使用。':'近期上下文可直接关联；共享长期记忆需要另行安装并启用 LivingMemory 插件。';
     $('install-state').textContent=data.install.message;
@@ -82,7 +84,7 @@
   $('save-context-settings').addEventListener('click',()=>run(async()=>{unwrap(await bridge.apiPost('context/settings',{enabled:$('context-enabled').checked,
     max_messages:$('context-messages').value,max_age_hours:$('context-age').value,max_chars_per_message:$('context-chars').value,max_total_chars:$('context-total').value}));notice('上下文范围已保存，下一次回复生效。');await loadContext();}));
   $('save-context-link').addEventListener('click',()=>run(async()=>{const choice=contextChoices[Number($('context-conversation').value)];if(!$('context-conversation').value||!choice)throw new Error('请选择已有对话。');
-    unwrap(await bridge.apiPost('context/link',{target_session:choice.session,target_conversation_id:choice.id,bidirectional:$('context-bidirectional').checked,share_memory:$('context-memory').checked}));notice('已有对话已关联，下一次回复可接续上下文。');await loadContext();}));
+    unwrap(await bridge.apiPost('context/link',{source_session:contextSource,target_session:choice.session,target_conversation_id:choice.id,bidirectional:$('context-bidirectional').checked,share_memory:$('context-memory').checked}));notice('已有对话已关联，下一次回复可接续上下文。');await loadContext();}));
   $('list-douyin-conversations').addEventListener('click',()=>run(async()=>{const data=unwrap(await bridge.apiPost('control',{action:'conversations'}));douyinChoices=data.conversations||[];$('douyin-conversations').replaceChildren();
     for(const [index,choice] of douyinChoices.entries()){const option=document.createElement('option');option.value=String(index);option.textContent=choice.name;$('douyin-conversations').append(option);}notice('会话列表已刷新；暂停回复后可打开所选会话。');}));
   $('select-douyin-conversation').addEventListener('click',()=>run(async()=>{const choice=douyinChoices[Number($('douyin-conversations').value)];if(!choice)throw new Error('请先刷新并选择抖音会话。');unwrap(await bridge.apiPost('setup/conversation/select',choice.conversation_id?{conversation_id:choice.conversation_id}:{name:choice.name}));notice('会话已打开，核对对象后点击“绑定当前会话”。');}));
@@ -95,7 +97,7 @@
   $('refresh').addEventListener('click',()=>run(load));
   $('default-dir').addEventListener('click',()=>{$('media-dir').value='';notice('已选择默认目录，点击保存后生效。');});
   $('save').addEventListener('click',()=>run(async()=>{const result=unwrap(await bridge.apiPost('setup/save',{media_dir:$('media-dir').value,browser_type:$('browser-type').value,autonomy_enabled:$('autonomy').checked,allow_public_comments:$('public-comments').checked,
-    group_chat_enabled:$('group-enabled').checked,group_reply_mode:$('group-reply-mode').value,group_mention_names:$('group-mention-names').value,group_share_qq_memory:$('group-share-qq-memory').checked,
+    account_display_name:$('account-display-name').value,auto_switch_enabled:$('auto-switch').checked,group_chat_enabled:$('group-enabled').checked,group_reply_mode:$('group-reply-mode').value,group_mention_names:$('group-mention-names').value,group_share_qq_memory:$('group-share-qq-memory').checked,
     max_download_mb:$('max-download').value.trim(),max_video_duration_seconds:$('max-video-duration').value.trim(),cache_cleanup_enabled:$('cache-cleanup').checked,
     cache_cleanup_interval_hours:$('cleanup-hours').value.trim(),cache_retention_hours:$('retention-hours').value.trim()}));notice(result.message+(result.browser_reopen_needed?' 请点击下方“重开登录窗口”应用新的浏览器选择。':''));await load();}));
     $('save-connection').addEventListener('click',()=>$('save').click());

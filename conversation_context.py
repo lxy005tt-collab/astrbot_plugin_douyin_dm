@@ -77,6 +77,8 @@ class ConversationContext:
         if not self.owner.binding:
             raise BrowserError('请先绑定一个抖音私聊或群聊。')
         source = self.owner.session_id()
+        if body.get('source_session') and body['source_session']!=source:
+            raise BrowserError('当前抖音会话已切换，请刷新后重新选择关联来源。')
         target = str(body.get('target_session') or '').strip()
         source_kind = session_kind(source)
         if source_kind=='GroupMessage' and not self.owner.config.get('group_share_qq_memory',False):

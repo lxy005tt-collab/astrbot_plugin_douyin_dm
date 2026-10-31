@@ -208,6 +208,18 @@
     "description": "单条视频时长上限（秒）",
     "hint": "默认 180 秒（3 分钟）；0 表示不限。下载前检查，超限或无法确认时长时跳过并提示 bot 换一个。仅限制视频，不限制图文。"
   },
+  "auto_switch_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "白名单内自动切换私聊与群聊",
+    "hint": "仅处理明确加入对应白名单的会话。开启或恢复监听时以当前消息为起点，不补回旧未读消息；回复完成后才切换。群聊仍遵循 @ 设置，记忆范围保持独立。"
+  },
+  "account_display_name": {
+    "type": "string",
+    "default": "",
+    "description": "抖音账号显示名（可选）",
+    "hint": "优先识别账号自己发出的消息昵称。无法取得时可手动填写，帮助机器人识别自己的抖音称呼与 @；不会改动人格。"
+  },
   "group_chat_enabled": {
     "type": "bool",
     "default": true,

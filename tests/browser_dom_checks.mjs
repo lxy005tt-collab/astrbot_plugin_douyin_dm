@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {readChatDOM} from '../mimi_douyin/browser/dom.mjs';
+import {activateConversation} from '../mimi_douyin/browser/conversation_ui.mjs';
 const require=createRequire(process.argv[2]);
 const {chromium}=require('playwright');
 const browser=await chromium.launch({executablePath:process.argv[3],headless:true});
@@ -29,8 +30,8 @@ try{
  });
  assert.equal((await page.evaluate(readChatDOM)).peer.conversation_type,'private');
  await page.evaluate(()=>{
-   class Conversation {get id(){return 'prototype-group';}get type(){return 2;}get name(){return 'Prototype group';}}
-   document.querySelector('[data-e2e="conversation-item"]').__reactProps$fixture={conversation:new Conversation()};
+   class Conversation {get id(){return 'prototype-group';}get type(){return 2;}get name(){return 'Prototype group';}get unreadCount(){return 3;}get lastMessage(){return {clientId:'last-native'};}}
+   document.querySelector('[data-e2e="conversation-item"]').__reactProps$fixture={conversation:new Conversation(),onMouseDown(){}};
    for(const item of document.querySelectorAll('[data-message-id]')){
      const msg=item.__reactProps$fixture.message;msg.conversation_type=2;msg.conversation_id='prototype-group';
      const stableID=item.dataset.messageId;
@@ -58,5 +59,24 @@ try{
  const prototypes=await page.evaluate(readChatDOM,{conversations_only:true});
  assert.equal(prototypes.conversations[0].conversation_id,'prototype-group');
  assert.equal(prototypes.conversations[0].name,'Prototype group');
+ assert.equal(prototypes.conversations[0].unread_count,3);
+ assert.equal(prototypes.conversations[0].latest_message_id,'last-native');
+ assert.equal(prototypes.conversations[0].activation_event,'mousedown');
+ await page.evaluate(()=>document.querySelector('[data-mimi-chat-index="0"]').addEventListener('mousedown',()=>{window.selectedConversation='prototype-group';}));
+ const chosen=await activateConversation(page,prototypes.conversations[0],()=>page.evaluate(()=>({ready:true,peer:{conversation_id:window.selectedConversation}})));
+ assert.equal(chosen.peer.conversation_id,'prototype-group');
+ await page.evaluate(()=>{
+   const row=document.querySelector('[data-e2e="conversation-item"]');
+   row.__reactProps$fixture.conversation={id:'prototype-group',type:2,name:'Example',
+     lastMessage:{clientId:'hidden-system'},lastVisibleMessage:{clientId:'different-model-instance',serverId:'visible-server'}};
+   for(const box of document.querySelectorAll('[data-index]')){
+     const msg=box.__reactProps$fixture?.message;
+     if(msg?.isMyMessage)Object.defineProperty(msg,'serverId',{value:'visible-server'});
+   }
+ });
+ const authoritative=await page.evaluate(readChatDOM);
+ assert.equal(authoritative.items.find(x=>x.sender==='me').native_id,'visible-server');
+ const visibleLatest=await page.evaluate(readChatDOM,{conversations_only:true});
+ assert.equal(visibleLatest.conversations[0].latest_message_id,'visible-server');
  console.log('PASS group identity, member attribution, conflicting direction flags, prototype IDs, read-receipt exclusion, private type');
 }finally{await browser.close();}

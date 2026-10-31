@@ -86,6 +86,7 @@ def test_native_group_members_and_batches_are_separate():
         owner=object.__new__(MimiDouyinDM)
         owner.context=NS(get_event_queue=lambda:asyncio.Queue());owner.config={'group_reply_mode':'所有新消息'}
         owner.platform=DouyinPlatform(owner);owner.job_lock=asyncio.Lock();owner._process_items=AsyncMock()
+        owner.ledger=NS(get=lambda key,default=None:default,put=Mock())
         peer={'key':'group-one','name':'Test group','conversation_type':'group','self_user_id':'bot'}
         def item(sender,text):return {'key':sender+text,'sender':'peer','sender_id':sender,'sender_name':sender,'kind':'text','text':text}
         messages=[item('one','a'),item('one','b'),item('two','c')]
@@ -160,6 +161,25 @@ def test_native_message_ids_survive_read_receipt_changes():
         assert ledger.observe('group',current)==[current[-1]]
         assert not ledger.observe('group',current)
         ledger.close()
+
+
+def test_observed_account_name_and_mention_reach_model_without_persona_edit():
+    async def check():
+        from astrbot_plugin_douyin_dm.bridge import add_channel_identity
+        owner=object.__new__(MimiDouyinDM);state={}
+        owner.config={};owner.ledger=NS(get=state.get,put=state.__setitem__)
+        owner.context=NS(get_event_queue=lambda:asyncio.Queue());owner.platform=DouyinPlatform(owner)
+        peer=owner.with_account_identity({'key':'group','conversation_type':'group','name':'Example group','self_user_id':'999','self_user_name':'ChannelBot'})
+        items=[{'key':'one','kind':'text','sender_id':'111','sender_name':'Member','text':'@ChannelBot hello'}]
+        event=DouyinEvent(owner,'test',items,[],[],peer=peer);request=NS(extra_user_content_parts=[])
+        add_channel_identity(event,request)
+        assert event.message_obj.raw_message['mentioned_self'] is True
+        assert 'ChannelBot' in request.extra_user_content_parts[0].text
+        private=owner.with_account_identity({'key':'private','name':'Member','self_user_id':'999'})
+        assert private['self_user_name']=='ChannelBot'
+        assert not owner.with_account_identity({'key':'other','self_user_id':'different-account'})['self_user_name']
+        assert owner.config=={}  # Neither account discovery nor mention data rewrites a persona/config.
+    run(check())
 
 
 if __name__=='__main__':

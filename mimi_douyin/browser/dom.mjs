@@ -1,14 +1,14 @@
 export function readChatDOM({debug=false,conversations_only=false}={}) {
     const visible=el=>el && el.getBoundingClientRect().width>10 && el.getBoundingClientRect().height>8;
     const factsFor=node=>{
-      const facts={video_ids:[],links:[],message_ids:[],conversation_ids:[],conversation_types:[],conversation_names:[],sender_ids:[],sender_names:[],from_me_flags:[],mentioned_ids:[],shapes:[]};
+      const facts={video_ids:[],links:[],message_ids:[],conversation_ids:[],conversation_types:[],conversation_names:[],unread_counts:[],latest_message_ids:[],sender_ids:[],sender_names:[],from_me_flags:[],mentioned_ids:[],shapes:[]};
       const seen=new WeakSet();let budget=1500;
       const walk=(value,depth,label='')=>{
         if(!value||typeof value!=='object'||depth>9||--budget<0||seen.has(value))return;
         seen.add(value);
         const keys=Object.keys(value);
         if(/^(message|msg|messageModel|record)$/i.test(label)){
-          for(const key of ['clientId','client_id','messageId','message_id','serverId','server_id']){
+          for(const key of ['serverId','server_id','messageId','message_id','clientId','client_id']){
             const id=value[key];
             if((typeof id==='string'||typeof id==='number')&&String(id)&&String(id)!=='0'&&String(id).length<100)
               facts.message_ids.push(String(id));
@@ -24,6 +24,12 @@ export function readChatDOM({debug=false,conversations_only=false}={}) {
           if([1,2].includes(Number(value.type)))facts.conversation_types.push(Number(value.type));
           const name=value.name??value.conversationName??value.displayName??value.coreInfo?.name;
           if(typeof name==='string'&&name)facts.conversation_names.push(name);
+          for(const key of ['unreadCount','unreadMessageCount','unread_count','badgeCount']){
+            const count=value[key];
+            if(typeof count==='number'&&Number.isFinite(count)&&count>=0)facts.unread_counts.push(count);
+          }
+          const last=value.lastVisibleMessage??value.lastMessage??value.lastMsg;
+          if(last){const id=last.serverId&&String(last.serverId)!=='0'?last.serverId:(last.messageId??last.clientId);if(id!=null)facts.latest_message_ids.push(String(id));}
         }
         if(typeof value.isMyMessage==='boolean')facts.from_me_flags.push(value.isMyMessage);
         if(typeof value.isFromMe==='boolean')facts.from_me_flags.push(value.isFromMe);
@@ -39,7 +45,9 @@ export function readChatDOM({debug=false,conversations_only=false}={}) {
         const senderName=sender?.nickname??sender?.nick_name??sender?.name;
         if(typeof senderName==='string'&&senderName)facts.sender_names.push(senderName);
         if(debug&&facts.shapes.length<24)
-          facts.shapes.push({at:label,keys:keys.slice(0,35)});
+          {let proto=Object.getPrototypeOf(value),inherited=[];
+            for(let i=0;i<4&&proto;i++,proto=Object.getPrototypeOf(proto))inherited.push(...Object.getOwnPropertyNames(proto));
+            facts.shapes.push({at:label,keys:keys.slice(0,35),prototype_keys:[...new Set(inherited)].slice(0,140)});}
         for(const key of keys.slice(0,80)){
           let child;try{child=value[key];}catch{continue;}
           if(typeof child==='string'||typeof child==='number'){
@@ -75,6 +83,8 @@ export function readChatDOM({debug=false,conversations_only=false}={}) {
       const name=facts.conversation_names[0]||node.querySelector('[class$="title"],[class*="nickname"],[class*="NickName"],[class*="Name"],[class*="name"]')?.textContent?.trim()
         ||node.innerText?.trim().split('\n').find(Boolean)||'';
       return {index,name,conversation_id:facts.conversation_ids[0]||'',conversation_type:facts.conversation_types[0]||null,
+        unread_count:facts.unread_counts.length?facts.unread_counts[0]:null,latest_message_id:facts.latest_message_ids[0]||'',
+        activation_event:Object.keys(node).filter(key=>key.startsWith('__reactProps')).some(key=>typeof node[key]?.onMouseDown==='function')?'mousedown':'click',
         ...(debug?{facts,node:brief(node)}: {})};
     });
     if(conversations_only)return {ready:false,conversations};
@@ -130,6 +140,7 @@ export function readChatDOM({debug=false,conversations_only=false}={}) {
         className:String(box.className),failed:!!box.querySelector('[class*="sendFail"],[class*="SendFail"]'),
         pending:!!box.querySelector('[class*="sending"],[class*="Sending"]'),
         ...(debug?{prop_shapes:facts.shapes,direction_flags:facts.from_me_flags,
+          observed_message_ids:facts.message_ids,
           css_from_me:/isFromMe/i.test(String(box.className))||!!box.querySelector('[class*="isFromMe"],[class*="IsFromMe"]')}: {})};
     }).filter(x=>x&&(x.text||x.links.length||x.images.length));
     if(raw.every(x=>x.hasAttribute('data-index')))items.sort((a,b)=>b.index-a.index);
@@ -151,10 +162,11 @@ export function readChatDOM({debug=false,conversations_only=false}={}) {
     const namedPeers=new Set(items.filter(x=>x.sender==='peer'&&x.sender_name).map(x=>x.sender_id||x.sender_name));
     const group=conversationType===2||(conversationType!==1&&(namedPeers.size>1||!!header?.querySelector('[class*="groupMember"],[class*="GroupMember"]')));
     const selfUserID=items.find(x=>x.sender==='me'&&x.sender_id)?.sender_id||'';
+    const selfUserName=items.find(x=>x.sender==='me'&&x.sender_name)?.sender_name||'';
     if(group)for(const item of items){
       item.mentioned_bot=!!selfUserID&&(item.mentioned_ids.includes(selfUserID)||(item.text.includes('@')&&item.text.includes(selfUserID)));
     }
     return {ready:true,peer:{name:peerName,link:group?'':peerLink,avatar,conversation_id:conversationID,
-        conversation_type:group?'group':'private',self_user_id:selfUserID},conversations,
+        conversation_type:group?'group':'private',self_user_id:selfUserID,self_user_name:selfUserName},conversations,
       direction_proven:ownClass||items.some(item=>item.direction_known),items,editor_class:editor.className,root_class:root.className,diagnostics};
 }

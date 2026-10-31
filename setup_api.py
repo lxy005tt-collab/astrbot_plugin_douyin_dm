@@ -86,6 +86,8 @@ class SetupAPI:
             'group_reply_mode':self.owner.config.get('group_reply_mode','仅@机器人'),
             'group_mention_names':self.owner.config.get('group_mention_names',[]),
             'group_share_qq_memory':self.owner.config.get('group_share_qq_memory',False),
+            'auto_switch_enabled':self.owner.config.get('auto_switch_enabled',False),
+            'account_display_name':self.owner.config.get('account_display_name',''),
             **media_settings(self.owner.config),'cache_cleanup':self.owner.cache.status()})
         return {'status':'ok','data':data}
 
@@ -108,7 +110,7 @@ class SetupAPI:
                     raw=payload['media_dir'].strip()
                     kind=payload.get('browser_type',self.owner.config.get('browser_type','自动选择'))
                     if kind not in ('自动选择','Edge','Chrome','Chromium'):raise BrowserError('浏览器类型不受支持。')
-                    flags={key:payload[key] for key in ('autonomy_enabled','allow_public_comments','group_chat_enabled','group_share_qq_memory') if key in payload}
+                    flags={key:payload[key] for key in ('autonomy_enabled','allow_public_comments','group_chat_enabled','group_share_qq_memory','auto_switch_enabled') if key in payload}
                     group_mode=payload.get('group_reply_mode',self.owner.config.get('group_reply_mode','仅@机器人'))
                     if group_mode not in ('仅@机器人','所有新消息'):raise BrowserError('请选择群聊回复方式。')
                     mention_names=payload.get('group_mention_names',self.owner.config.get('group_mention_names',[]))
@@ -116,6 +118,8 @@ class SetupAPI:
                     if not isinstance(mention_names,list) or not all(isinstance(name,str) and 0<len(name)<=80 for name in mention_names):raise BrowserError('机器人群昵称应为逗号分隔的名称。')
                     preferences=validate_media_settings(payload)
                     if any(not isinstance(value,bool) for value in flags.values()):raise BrowserError('活动开关应为布尔值。')
+                    display_name=payload.get('account_display_name',self.owner.config.get('account_display_name',''))
+                    if not isinstance(display_name,str) or len(display_name)>80:raise BrowserError('抖音账号显示名应为不超过 80 字的文本。')
                     proposed=RuntimeEnvironment({**self.owner.config,'media_dir':raw,**preferences},self.owner.data_dir)
                     directory=proposed.media_dir
                     directory.mkdir(parents=True,exist_ok=True)
@@ -133,6 +137,7 @@ class SetupAPI:
                     if running:await self.owner.browser.call('configure',{'media_dir':str(directory),'max_download_mb':next_limit,
                         'max_video_duration_seconds':next_duration})
                     previous=dict(self.owner.config)
+                    self.owner.config['account_display_name']=display_name.strip()
                     self.owner.config['media_dir']=raw
                     self.owner.config['browser_type']=kind
                     self.owner.config.update(flags)
@@ -145,6 +150,7 @@ class SetupAPI:
                             'max_video_duration_seconds':old_duration})
                         raise
                     self.owner.browser.config=self.owner.runtime.settings()
+                    if previous.get('auto_switch_enabled',False)!=self.owner.config.get('auto_switch_enabled',False):self.owner.switching.reset()
                     self.owner.cache.settings_changed()
                     return {'status':'ok','data':{'media_dir':str(directory),'setting':raw,
                         'browser_reopen_needed':running and previous['browser_type']!=kind,

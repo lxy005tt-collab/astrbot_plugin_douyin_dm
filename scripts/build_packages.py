@@ -8,13 +8,13 @@ import zipfile
 ROOT=Path(__file__).resolve().parents[1]
 CORE_PY=['__init__.py','__main__.py','activities.py','app.py','cache.py','client.py','config.py','errors.py',
     'media.py','perception.py','runtime.py','service.py','share_request.py','transport.py','wire.py']
-BROWSER=['worker.mjs','browser_actions.mjs','comment_ui.mjs','dom.mjs','media.mjs','post_media.mjs','explore.mjs','runtime_probe.mjs']
+BROWSER=['worker.mjs','browser_actions.mjs','conversation_ui.mjs','comment_ui.mjs','dom.mjs','media.mjs','post_media.mjs','explore.mjs','runtime_probe.mjs']
 SHARED=['mimi_douyin/'+name for name in CORE_PY]+['mimi_douyin/browser/'+name for name in BROWSER]+[
     'mimi_douyin/web/index.html','mimi_douyin/web/app.js','mimi_douyin/web/style.css']
 COMMON=['ATTRIBUTIONS.md','LICENSE','CHANGELOG.md','pyproject.toml','standalone-requirements.txt',
     'setup.bat','start.bat','config.example.json','.gitignore','scripts/build_packages.py']
 NATIVE=['__init__.py','metadata.yaml','_conf_schema.json','main.py','bridge.py','browser_worker.mjs','dom.mjs','media.mjs',
-    'watch_memory.py','video_transcription.py','runtime.py','runtime_probe.mjs','setup_api.py','browser_actions.mjs','native_activities.py','conversation_context.py',
+    'watch_memory.py','video_transcription.py','runtime.py','runtime_probe.mjs','setup_api.py','browser_actions.mjs','native_activities.py','conversation_context.py','conversation_switching.py',
     'package.json','requirements.txt','README.md','pages/接入设置/index.html','pages/接入设置/app.js','pages/接入设置/style.css','integrations/README.md']
 
 def main():

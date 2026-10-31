@@ -38,7 +38,10 @@ async function open(config) {
       const byID=config.restore_peer.conversation_id?(listed.conversations||[]).filter(
         item=>item.conversation_id===config.restore_peer.conversation_id):[];
       let match=byID.length===1;
-      if(match)await page.locator('[data-mimi-chat-index="'+byID[0].index+'"]').click();
+      if(match){
+        const {activateConversation}=await import('./conversation_ui.mjs');
+        await activateConversation(page,byID[0],snapshot);
+      }
       else match=await page.evaluate(peer=>{
         const clean=x=>{try{return new URL(x).pathname;}catch{return '';}};
         const candidates=[...document.querySelectorAll('[data-e2e="conversation-item"]')]
@@ -80,6 +83,9 @@ async function snapshot(options={}) {
   const version=(await fs.stat(domFile)).mtimeMs;
   const {readChatDOM}=await import(pathToFileURL(domFile).href+'?v='+version);
   const data=await page.evaluate(readChatDOM,{debug:!!options.debug,conversations_only:!!options.conversations_only});
+  for(const row of data.conversations||[]){
+    row.key=row.conversation_id?hash((row.conversation_type===2?'group:':'')+row.conversation_id):'';
+  }
   if(!data.ready)return data;
   const peer=data.peer;
   const group=peer.conversation_type==='group';
@@ -130,9 +136,8 @@ async function selectConversation(args) {
   const matches=(list.conversations||[]).filter(item=>args.conversation_id?
     item.conversation_id===args.conversation_id:item.name===args.name);
   if(matches.length!==1)throw new Error(matches.length?'存在同名会话，请使用会话 ID 选择。':'当前列表未找到指定会话，请先在抖音消息列表中打开它。');
-  await page.locator('[data-mimi-chat-index="'+matches[0].index+'"]').click();
-  await page.waitForTimeout(500);
-  return snapshot();
+  const {activateConversation}=await import('./conversation_ui.mjs');
+  return activateConversation(page,matches[0],snapshot);
 }
 
 async function download(args) {

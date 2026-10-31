@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>抖音接入设置</title>
   <link rel="stylesheet" href="./style.css">
-  <script src="./app.js?v=0.5.0" defer></script>
+  <script src="./app.js?v=0.5.1" defer></script>
 </head>
 <body>
 <main>
@@ -18,6 +18,11 @@
 <div id="panel-connect" role="tabpanel" aria-labelledby="tab-connect">  <section>
     <h2>会话接入</h2>
 <button id="save-connection" class="primary" type="button">保存接入设置</button>
+    <label><input id="auto-switch" type="checkbox"> 在白名单内自动切换私聊与群聊</label>
+    <p class="detail">有新消息时自动打开对应会话，完成当前回复后再切换。只处理已明确加入白名单的会话；开启时不补回旧未读消息。关闭后只监听当前绑定会话。</p>
+    <label for="account-display-name">抖音账号显示名（可选）</label>
+    <input id="account-display-name" maxlength="80" placeholder="默认从账号自己发出的消息识别">
+    <p class="detail">识别不到时可手动填写。机器人会知道这个名字指的是自己，以及当前消息是否 @ 了自己；不改动原人格。</p>
     <label><input id="group-enabled" type="checkbox" checked> 允许绑定抖音群聊</label>
     <label for="group-reply-mode">群聊回复方式</label>
     <select id="group-reply-mode"><option>仅@机器人</option><option>所有新消息</option></select>
@@ -25,7 +30,7 @@
     <input id="group-mention-names" placeholder="仅用于文字 @ 匹配，可填写群内显示昵称">
     <label><input id="group-share-qq-memory" type="checkbox"> 群聊读取所选 QQ 对话与记忆（默认关闭）</label>
     <p class="detail">开启后仍需在“上下文与记忆”中明确选择要参考的 QQ 私聊或 QQ 群对话。私人对话只向群聊单向提供参考；群内新发言仍按群成员记录，不写成该 QQ 用户的个人记忆。</p>
-    <p class="detail">私聊和群聊分别使用白名单，群成员分别识别。保存上方设置后生效；仅处理当前打开并明确绑定的会话，不轮巡所有聊天。</p>
+    <p class="detail">私聊和群聊分别使用白名单，群成员分别识别。绑定会话会将其加入对应白名单，保存上方设置后生效。群聊功能仍在测试中，尚未测试大群，稳定性未知。</p>
     <div class="row"><select id="douyin-conversations" aria-label="抖音会话"></select><button id="list-douyin-conversations" type="button">刷新抖音会话列表</button><button id="select-douyin-conversation" type="button">打开所选会话</button></div>
     <p>请在<strong>本页打开的专用浏览器窗口</strong>中操作。你平时用的浏览器即使已经登录、打开了私信，也不代表插件已经连接。</p>
     <ol>
@@ -39,7 +44,7 @@
     <p id="models" class="detail"></p>
     <p id="bot-state"></p>
     <div class="row"><button data-action="open" type="button">打开登录窗口</button><button data-action="bind" type="button">绑定当前会话</button><button data-action="start" class="primary" type="button">开启回复</button><button data-action="pause" type="button">暂停回复</button><button id="reopen" type="button">重开登录窗口</button></div>
-    <p class="detail">日常使用不必重复绑定，也不用一直把浏览器放在前台；请保持专用窗口里的目标会话打开。需要更新本页状态时，点右上角“刷新状态”。</p>
+    <p class="detail">日常使用不必重复绑定，也不用一直把浏览器放在前台。自动模式请保留专用窗口的消息面板；固定模式请保持目标会话打开。需要更新本页状态时，点右上角“刷新状态”。</p>
     <details><summary>关闭窗口后怎么恢复？为什么还没有回复？</summary>
       <p><strong>只关了私信面板：</strong>在专用窗口重新点击“消息”并进入已绑定的会话，回本页重新检测。回复已暂停时再点“开启回复”；同一对象不必重新绑定。</p>
       <p><strong>整个专用窗口都关了：</strong>回本页点“重开登录窗口”。程序会尝试恢复已绑定的会话；没有恢复时，请手动进入目标会话，确认对象后再开启回复。请勿仅凭浏览器弹出，就认为私信已经就绪。</p>

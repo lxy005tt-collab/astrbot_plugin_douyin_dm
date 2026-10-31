@@ -20,6 +20,7 @@ try{
        window.savedRequests.push({route,body});
        if(route==='context/conversations')return {status:'ok',data:{conversations:[{id:'selected',session:'qq:FriendMessage:example',kind:'FriendMessage',title:'Existing chat'}]}};
        if(route==='context/settings')Object.assign(settings,body);
+       if(route==='setup/save')Object.assign(setup,body);
        return {status:'ok',data:{message:'Saved'}};
      }};
  });
@@ -40,6 +41,10 @@ try{
  await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);
  const requests=await page.evaluate(()=>window.savedRequests);
  assert.equal(requests.find(x=>x.route==='context/settings').body.max_messages,'12');
- assert.deepEqual(requests.find(x=>x.route==='context/link').body,{target_session:'qq:FriendMessage:example',target_conversation_id:'selected',bidirectional:false,share_memory:true});
+ assert.deepEqual(requests.find(x=>x.route==='context/link').body,{source_session:'douyin:GroupMessage:example',target_session:'qq:FriendMessage:example',target_conversation_id:'selected',bidirectional:false,share_memory:true});
+ await page.locator('[data-panel="connect"]').click();await page.locator('#auto-switch').check();
+ await page.locator('#save-connection').click();await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);
+ assert.equal(await page.locator('#auto-switch').isChecked(),true);
+ assert.equal(await page.evaluate(()=>window.savedRequests.find(x=>x.route==='setup/save').body.auto_switch_enabled),true);
  console.log('PASS setup tabs, mobile width, persisted context payload, explicit one-way group memory');
 }finally{await browser.close();}

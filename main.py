@@ -19,6 +19,7 @@ from astrbot.core.agent.message import TextPart
 from astrbot.core.platform.platform import PlatformStatus
 
 from .bridge import BrowserError, BrowserWorker, DouyinEvent, DouyinPlatform, Ledger, insert_native_videos, prepare_video
+from .bridge import addressed_to_bot,add_channel_identity
 from .watch_memory import memory_components, remember_video, index_pending_video_memories
 from .video_transcription import transcribe_video, format_transcript, uses_text_transcription
 from .runtime import RuntimeEnvironment
@@ -27,6 +28,7 @@ from . import native_activities
 from .mimi_douyin.cache import CacheMaintenance
 from .mimi_douyin.share_request import shared_post_request
 from .conversation_context import ConversationContext
+from .conversation_switching import ConversationSwitching
 
 
 def perception_error_frames(exc):
@@ -59,12 +61,21 @@ class MimiDouyinDM(Star):
         self.activities=native_activities.ActivityEngine(self,transcribe_video)
         self.cache=CacheMaintenance(self,legacy_roots=(self.data_dir.parents[1]/'mimi_douyin/media',))
         self.context_sharing=ConversationContext(self)
+        self.switching=ConversationSwitching(self)
 
     def session_id(self,peer=None):
         peer=peer or (self.binding or {}).get('peer',{})
         if not peer.get('key'):return ''
         kind='GroupMessage' if peer.get('conversation_type')=='group' else 'FriendMessage'
         return 'mimi-douyin:'+kind+':'+peer['key']
+
+    def with_account_identity(self,peer):
+        uid=peer.get('self_user_id','');name=peer.get('self_user_name','')
+        if uid and name:self.ledger.put('account_identity',{'id':uid,'name':name})
+        stored=self.ledger.get('account_identity',{})
+        aliases=list(dict.fromkeys(value for value in [name,self.config.get('account_display_name','').strip(),stored.get('name','') if uid and stored.get('id')==uid else ''] if value))
+        name=self.config.get('account_display_name','').strip() or name or (stored.get('name','') if uid and stored.get('id')==uid else '')
+        return {**peer,'self_user_name':name,'self_aliases':aliases}
 
     async def initialize(self):
         self.context.platform_manager.platform_insts.append(self.platform)
@@ -117,6 +128,7 @@ class MimiDouyinDM(Star):
             'session_id':self.session_id(),
             'whitelist_enabled':bool(self.config.get('whitelist_enabled',True)),
             'private_whitelist':self.config.get('private_whitelist',[]),
+            'auto_switch_enabled':bool(self.config.get('auto_switch_enabled',False)),
             'recent_jobs':[{'id':r[0],'state':r[1],'updated':r[2]} for r in recent]}
 
     async def api_status(self):return {'status':'ok','data':self.status()}
@@ -282,7 +294,7 @@ class MimiDouyinDM(Star):
                     raise BrowserError('请先在接入设置中开启群聊接入。')
                 if not snapshot.get('direction_proven'):
                     raise BrowserError('尚未从页面确认收发方向，请保持双方已有消息的私信打开。')
-                self.binding={'peer':snapshot['peer'],'bound_at':time.time()}
+                self.binding={'peer':self.with_account_identity(snapshot['peer']),'bound_at':time.time()}
                 self.ledger.put('binding',self.binding)
                 whitelist='group_whitelist' if snapshot['peer'].get('conversation_type')=='group' else 'private_whitelist'
                 if snapshot['peer']['key'] not in self.config.get(whitelist,[]):
@@ -292,15 +304,19 @@ class MimiDouyinDM(Star):
                 self.state='bound_paused';self.last_error=''
                 return {'bound':True,'peer':snapshot['peer'],'history_baselined':True}
             if action=='start':
+                if self.job_lock.locked():raise BrowserError('正在处理消息，请等当前回复结束后再开启监听。')
                 if not self.binding:raise BrowserError('请先登录并绑定目标私信会话。')
                 snapshot=await self.browser.call('snapshot')
                 self._check_peer(snapshot)
                 self._check_profile(snapshot['peer']['key'],snapshot['peer'])
+                self.switching.reset()
+                if self.config.get('auto_switch_enabled',False):await self.switching.poll()
                 self.config['auto_reply_enabled']=True;self._save_config()
                 self.platform.status=PlatformStatus.RUNNING
                 self.state='listening';return self.status()
             if action=='pause':
                 self.config['auto_reply_enabled']=False;self._save_config();self.state='paused'
+                self.switching.reset()
                 self.platform.status=PlatformStatus.STOPPED
                 if self.current_event and not self.current_event.done.done():
                     self.ledger.job(self.current_event.job_id,'paused')
@@ -339,15 +355,22 @@ class MimiDouyinDM(Star):
                 if (self.config.get('enabled',True) and self.config.get('auto_reply_enabled',False)
                         and self.binding and not self.action_lock.locked()):
                     if not self.browser.process or self.browser.process.returncode is not None:await self._open_browser()
-                    snapshot=await self.browser.call('snapshot');self._check_peer(snapshot)
-                    peer_key=snapshot['peer']['key']
-                    fresh=self.ledger.observe(peer_key,snapshot['items'])
+                    async with self.action_lock:
+                        if self.config.get('auto_switch_enabled',False):
+                            result=await self.switching.poll()
+                            if result:snapshot,fresh=result
+                            else:snapshot=None;fresh=[]
+                        else:
+                            snapshot=await self.browser.call('snapshot');self._check_peer(snapshot)
+                            fresh=self.ledger.observe(snapshot['peer']['key'],snapshot['items'])
                     self.state='listening';self.last_error=''
                     if fresh:
+                        peer_key=snapshot['peer']['key']
                         await asyncio.sleep(max(0,min(15,float(self.config.get('merge_seconds',3)))))
                         second=await self.browser.call('snapshot');self._check_peer(second)
                         if second['peer']['key']!=peer_key:continue
                         fresh.extend(self.ledger.observe(peer_key,second['items']))
+                        self.switching.observed(second)
                         await self._handle(fresh,snapshot['peer'])
             except asyncio.CancelledError:raise
             except Exception as exc:
@@ -357,6 +380,7 @@ class MimiDouyinDM(Star):
             await asyncio.sleep(max(2,float(self.config.get('poll_seconds',4))))
 
     async def _handle(self,items,peer):
+        peer=self.with_account_identity(peer)
         async with self.job_lock:
             if peer.get('conversation_type')!='group':
                 await self._process_items(items,peer);return
@@ -368,8 +392,7 @@ class MimiDouyinDM(Star):
                 else:batches.append([item])
             for batch in batches:
                 if self.config.get('group_reply_mode','仅@机器人')=='仅@机器人':
-                    names=self.config.get('group_mention_names',[])
-                    addressed=any(item.get('mentioned_bot') or any(re.search(r'@'+re.escape(name)+r'(?:\s|$)',item.get('text','')) for name in names) for item in batch)
+                    addressed=addressed_to_bot(batch,peer,self.config.get('group_mention_names',[]))
                     if not addressed:continue
                 await self._process_items(batch,peer)
 
@@ -501,6 +524,7 @@ class MimiDouyinDM(Star):
 
     @filter.on_llm_request(priority=-maxsize)
     async def linked_conversation_context(self,event,req):
+        add_channel_identity(event,req)
         await self.context_sharing.inject(event,req)
 
     @filter.on_llm_request(priority=maxsize+5)
