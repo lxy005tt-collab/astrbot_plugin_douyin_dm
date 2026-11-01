@@ -14,7 +14,7 @@ SHARED=['mimi_douyin/'+name for name in CORE_PY]+['mimi_douyin/browser/'+name fo
 COMMON=['ATTRIBUTIONS.md','LICENSE','CHANGELOG.md','pyproject.toml','standalone-requirements.txt',
     'setup.bat','start.bat','config.example.json','.gitignore','scripts/build_packages.py']
 NATIVE=['__init__.py','metadata.yaml','_conf_schema.json','main.py','bridge.py','browser_worker.mjs','dom.mjs','media.mjs',
-    'watch_memory.py','video_transcription.py','runtime.py','runtime_probe.mjs','setup_api.py','browser_actions.mjs','native_activities.py','conversation_context.py','conversation_switching.py',
+    'watch_memory.py','video_transcription.py','runtime.py','runtime_probe.mjs','setup_api.py','browser_actions.mjs','native_activities.py','conversation_context.py','conversation_switching.py','group_conversation.py',
     'package.json','requirements.txt','README.md','pages/接入设置/index.html','pages/接入设置/app.js','pages/接入设置/style.css','integrations/README.md']
 
 def main():

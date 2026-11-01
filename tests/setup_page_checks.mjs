@@ -21,6 +21,7 @@ try{
        if(route==='context/conversations')return {status:'ok',data:{conversations:[{id:'selected',session:'qq:FriendMessage:example',kind:'FriendMessage',title:'Existing chat'}]}};
        if(route==='context/settings')Object.assign(settings,body);
        if(route==='setup/save')Object.assign(setup,body);
+       if(route==='group/settings')return {status:'ok',data:{settings:body}};
        return {status:'ok',data:{message:'Saved'}};
      }};
  });
@@ -46,5 +47,15 @@ try{
  await page.locator('#save-connection').click();await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);
  assert.equal(await page.locator('#auto-switch').isChecked(),true);
  assert.equal(await page.evaluate(()=>window.savedRequests.find(x=>x.route==='setup/save').body.auto_switch_enabled),true);
+ await page.locator('[data-panel="context"]').click();await page.locator('#group-probability').fill('10');
+ await page.locator('#group-cooldown').fill('60');await page.locator('#group-context-messages').fill('25');
+ await page.getByText('判断模型与自定义提示词',{exact:true}).click();
+ await page.locator('#group-judge-provider').fill('example-custom-judge');
+ await page.locator('#group-judge-prompt').fill('Custom public-topic decision rules');
+ await page.locator('#group-reply-prompt').fill('Custom conversational style');
+ await page.locator('#save-group-settings').click();await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);
+ const group=await page.evaluate(()=>window.savedRequests.find(x=>x.route==='group/settings').body);
+ assert.equal(group.reply_probability,0.1);assert.equal(group.reply_cooldown_seconds,'60');assert.equal(group.context_messages,'25');
+ assert.equal(group.judge_provider_id,'example-custom-judge');assert.equal(group.judge_prompt,'Custom public-topic decision rules');assert.equal(group.reply_prompt,'Custom conversational style');
  console.log('PASS setup tabs, mobile width, persisted context payload, explicit one-way group memory');
 }finally{await browser.close();}

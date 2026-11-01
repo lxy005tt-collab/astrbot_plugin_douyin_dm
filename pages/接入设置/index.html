@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>抖音接入设置</title>
-  <link rel="stylesheet" href="./style.css">
-  <script src="./app.js?v=0.5.1" defer></script>
+  <link rel="stylesheet" href="./style.css?v=0.5.2">
+  <script src="./app.js?v=0.5.2" defer></script>
 </head>
 <body>
 <main>
@@ -25,7 +25,8 @@
     <p class="detail">识别不到时可手动填写。机器人会知道这个名字指的是自己，以及当前消息是否 @ 了自己；不改动原人格。</p>
     <label><input id="group-enabled" type="checkbox" checked> 允许绑定抖音群聊</label>
     <label for="group-reply-mode">群聊回复方式</label>
-    <select id="group-reply-mode"><option>仅@机器人</option><option>所有新消息</option></select>
+    <select id="group-reply-mode"><option>仅@机器人</option><option>智能接话</option><option>所有新消息</option></select>
+    <p class="detail">智能接话会先采样，再结合上下文判断是否适合参与；被 @ 时仍正常回应。采样、冷却和提示词在“上下文与记忆”中自定义。</p>
     <label for="group-mention-names">机器人在群内的昵称（多个昵称用逗号分隔）</label>
     <input id="group-mention-names" placeholder="仅用于文字 @ 匹配，可填写群内显示昵称">
     <label><input id="group-share-qq-memory" type="checkbox"> 群聊读取所选 QQ 对话与记忆（默认关闭）</label>
@@ -69,7 +70,27 @@
     <p class="detail">评论会发到抖音公开评论区。改变开关后点击上方“保存设置”。</p>
     <button data-action="watch_recommended" type="button">实际读一条推荐作品</button>
     <pre id="activity-observation" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
-  </section></details></div><div id="panel-context" role="tabpanel" aria-labelledby="tab-context" hidden>  <section>
+  </section></details></div><div id="panel-context" role="tabpanel" aria-labelledby="tab-context" hidden><section>
+<h2>群聊上下文与智能接话</h2>
+<p>设置用于所有已接入群聊，近期消息按群分别保留。</p>
+<label><input id="group-context-enabled" type="checkbox"> 保留群聊近期上下文</label>
+<label><input id="group-reference-media" type="checkbox"> 允许关联此前群成员分享的作品</label>
+<p class="detail">有人分享作品后，其他成员再 @ 机器人也可请求查看。会先结合上下文确认是哪条分享；指代不清时先澄清，不把旧视频当作已看过。</p>
+<label for="group-context-messages">最多参考多少条消息</label><input id="group-context-messages" type="number" min="1" max="100">
+<label for="group-context-minutes">保留最近观察到消息的时间（分钟）</label><input id="group-context-minutes" type="number" min="1" max="1440">
+<label for="group-context-chars">上下文总字数预算</label><input id="group-context-chars" type="number" min="1000" max="50000">
+<label for="group-probability">非 @ 消息采样概率（%）</label><input id="group-probability" type="number" min="0" max="100" step="1">
+<p class="detail">10% 表示约十分之一的候选消息进入相关性判断，并非十分之一必定回复。被 @ 的回应不受此概率限制。</p>
+<label for="group-cooldown">主动接话冷却（秒）</label><input id="group-cooldown" type="number" min="0" max="3600">
+<details><summary>判断模型与自定义提示词</summary>
+<label for="group-judge-provider">判断模型 ID（可选）</label><input id="group-judge-provider" placeholder="留空跟随聊天模型，也可在 AstrBot 插件配置中选择">
+<label for="group-judge-timeout">判断超时（秒）</label><input id="group-judge-timeout" type="number" min="1" max="120">
+<label for="group-judge-prompt">主动接话判断提示词</label><textarea id="group-judge-prompt" rows="10" maxlength="12000"></textarea>
+<label for="group-reply-prompt">主动接话回复风格提示词</label><textarea id="group-reply-prompt" rows="5" maxlength="12000"></textarea>
+<p class="detail">判断器只选择 REPLY、TOPIC、IGNORE；回复正文仍由正常聊天模型按当前人格生成。判断失败时不主动插话，被 @ 的消息仍可正常回应。</p>
+</details>
+<button id="save-group-settings" class="primary" type="button">保存群聊设置</button>
+</section>  <section>
     <h2>关联已有对话与共享上下文</h2>
     <p>先绑定抖音会话，再选择已有的 AstrBot 对话。切换平台后可接续之前的话题；聊天记录分别保存，关联不会覆盖或搬动旧记录。</p>
     <p id="context-source" class="detail"></p>

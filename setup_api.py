@@ -12,6 +12,7 @@ from .bridge import BrowserError
 from .runtime import RuntimeEnvironment, browse_directories
 from .mimi_douyin.cache import media_settings,validate_media_settings
 from .conversation_context import validate_settings
+from .group_conversation import validate_settings as validate_group_settings
 
 
 class SetupAPI:
@@ -25,6 +26,7 @@ class SetupAPI:
                 ('setup/save',self.save,['POST']),('setup/install',self.install,['POST']),
                 ('setup/install/status',self.install_status,['GET']),
                 ('context/status',self.context_status,['GET']),('context/conversations',self.context_conversations,['POST']),
+                ('group/settings',self.group_settings,['POST']),
                 ('context/settings',self.context_settings,['POST']),('context/link',self.context_link,['POST']),
                 ('setup/conversation/select',self.select_conversation,['POST'])]
 
@@ -43,6 +45,19 @@ class SetupAPI:
             'links':self.owner.context_sharing.links(),'source_session':self.owner.session_id(),
             'memory_available':bool(self.owner.context_sharing.memory()),
             'group_share_qq_memory':self.owner.config.get('group_share_qq_memory',False)}}
+
+    async def group_settings(self):
+        body=await request.json(default={})
+        try:
+            settings=validate_group_settings(body)
+            async with self.owner.action_lock:
+                if self.owner.job_lock.locked():raise BrowserError('正在处理消息，请等当前回复结束后保存群聊设置。')
+                old=self.owner.config.get('group_conversation',{})
+                self.owner.config['group_conversation']=settings
+                try:self.owner._save_config()
+                except Exception:self.owner.config['group_conversation']=old;raise
+            return {'status':'ok','data':{'settings':settings}}
+        except (BrowserError,TypeError,ValueError) as error:return {'status':'error','message':str(error)}
 
     async def context_conversations(self):
         body=await request.json(default={})
@@ -84,6 +99,7 @@ class SetupAPI:
             'allow_public_comments':bool(self.owner.config.get('allow_public_comments',False)),
             'group_chat_enabled':self.owner.config.get('group_chat_enabled',True),
             'group_reply_mode':self.owner.config.get('group_reply_mode','仅@机器人'),
+            'group_conversation':self.owner.group_conversation.settings,
             'group_mention_names':self.owner.config.get('group_mention_names',[]),
             'group_share_qq_memory':self.owner.config.get('group_share_qq_memory',False),
             'auto_switch_enabled':self.owner.config.get('auto_switch_enabled',False),
@@ -112,7 +128,7 @@ class SetupAPI:
                     if kind not in ('自动选择','Edge','Chrome','Chromium'):raise BrowserError('浏览器类型不受支持。')
                     flags={key:payload[key] for key in ('autonomy_enabled','allow_public_comments','group_chat_enabled','group_share_qq_memory','auto_switch_enabled') if key in payload}
                     group_mode=payload.get('group_reply_mode',self.owner.config.get('group_reply_mode','仅@机器人'))
-                    if group_mode not in ('仅@机器人','所有新消息'):raise BrowserError('请选择群聊回复方式。')
+                    if group_mode not in ('仅@机器人','智能接话','所有新消息'):raise BrowserError('请选择群聊回复方式。')
                     mention_names=payload.get('group_mention_names',self.owner.config.get('group_mention_names',[]))
                     if isinstance(mention_names,str):mention_names=[name.strip() for name in mention_names.split(',') if name.strip()]
                     if not isinstance(mention_names,list) or not all(isinstance(name,str) and 0<len(name)<=80 for name in mention_names):raise BrowserError('机器人群昵称应为逗号分隔的名称。')

@@ -87,6 +87,8 @@ def test_native_group_members_and_batches_are_separate():
         owner.context=NS(get_event_queue=lambda:asyncio.Queue());owner.config={'group_reply_mode':'所有新消息'}
         owner.platform=DouyinPlatform(owner);owner.job_lock=asyncio.Lock();owner._process_items=AsyncMock()
         owner.ledger=NS(get=lambda key,default=None:default,put=Mock())
+        from astrbot_plugin_douyin_dm.group_conversation import GroupConversation
+        owner.group_conversation=GroupConversation(owner)
         peer={'key':'group-one','name':'Test group','conversation_type':'group','self_user_id':'bot'}
         def item(sender,text):return {'key':sender+text,'sender':'peer','sender_id':sender,'sender_name':sender,'kind':'text','text':text}
         messages=[item('one','a'),item('one','b'),item('two','c')]

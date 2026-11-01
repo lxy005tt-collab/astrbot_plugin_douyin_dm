@@ -1,5 +1,11 @@
 # References
 
+The REPLY / TOPIC / IGNORE group-conversation decision rules are adapted from
+the reply module in [QQ Bot Toolbox](https://github.com/lxy005tt-collab/astrbot_plugin_qq_toolbox).
+Those portions are MIT licensed, Copyright (c) 2026 LXY and vivi. The MIT
+permission and warranty text reproduced below also applies to those portions.
+No personal model configuration, account identity or chat records are bundled.
+
 The private-chat DOM selectors and virtual-list direction observations were informed by
 [popohuan/douyin-bot](https://github.com/popohuan/douyin-bot), specifically bot_manager.py.
 The browser worker, event bridge, video inputs, persistence, and send-receipt handling

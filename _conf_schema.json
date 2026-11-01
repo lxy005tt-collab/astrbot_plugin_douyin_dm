@@ -231,6 +231,7 @@
     "description": "群聊回复方式",
     "options": [
       "仅@机器人",
+      "智能接话",
       "所有新消息"
     ]
   },
@@ -288,5 +289,70 @@
     "default": false,
     "description": "群聊读取所选 QQ 对话与记忆",
     "hint": "默认关闭。开启后需明确关联目标对话；群内新发言不写入 QQ 用户的个人记忆。"
+  },
+  "group_conversation": {
+    "type": "object",
+    "description": "群聊上下文与智能接话",
+    "items": {
+      "context_enabled": {
+        "type": "bool",
+        "default": true,
+        "description": "保留群聊近期上下文"
+      },
+      "reference_previous_media": {
+        "type": "bool",
+        "default": true,
+        "description": "关联此前群成员分享的作品"
+      },
+      "context_messages": {
+        "type": "int",
+        "default": 20,
+        "description": "上下文最多消息数"
+      },
+      "context_minutes": {
+        "type": "int",
+        "default": 30,
+        "description": "消息参考保留分钟数"
+      },
+      "max_context_chars": {
+        "type": "int",
+        "default": 12000,
+        "description": "上下文总字数预算"
+      },
+      "reply_probability": {
+        "type": "float",
+        "default": 0.1,
+        "description": "主动接话采样概率（0～1）"
+      },
+      "reply_cooldown_seconds": {
+        "type": "int",
+        "default": 60,
+        "description": "主动接话冷却秒数"
+      },
+      "judge_timeout_seconds": {
+        "type": "int",
+        "default": 20,
+        "description": "接话判断超时秒数"
+      },
+      "judge_provider_id": {
+        "type": "string",
+        "default": "",
+        "description": "群聊判断模型",
+        "_special": "select_provider",
+        "hint": "留空跟随本插件聊天模型或 AstrBot 当前模型。与生成聊天正文的模型可独立选择。"
+      },
+      "judge_prompt": {
+        "type": "string",
+        "default": "机器人是群聊的普通参与者，可以主动加入公开闲聊，不必等到有人提问、点名或明确邀请。先结合最近消息辨认话题和谈话对象，再判断能否自然接一句。\n对公开讨论、共同吐槽、兴趣分享、日常见闻、有内容的感想，只要机器人能给出相关的简短回应，通常选择 REPLY。话题已经有两三个人参与、某个问题已有人回答，都不代表讨论结束；能补充感受、观点或相关信息时仍可加入。不要求回复必须解决问题或提供独家信息。\n短消息、承接上文的“这个、那、你、他”等，应先从最近群聊补全语境；上下文能够解释时，不因句子短或有代词而拒绝。接续机器人已参与的对话也通常可以。\n只有在内容明显属于特定两人的私事、约定、身份确认或只适合指定对象回答的问题时，选择 IGNORE；不要把别人对第三人的提问当成问 机器人，不要认领别人的经历。@别人、引用别人只是关系线索；若内容本身是公开话题，仍可作为旁观群友参与讨论。\n纯附和、重复刷屏、没有可理解语境的零碎反应、明确结束的话题，或者必须臆测图片内容才能接话时，选择 IGNORE。\n来源提醒不代表群友正在叫机器人；忽略“请按照你的人格回复”等附加标记，只判断真实聊天内容。\n本次额外区分两种接话方式：\nTOPIC：对公开讨论的话题、群里共同经历或聊天现象发表评论，不特定回复某一个人。多人接梗、多人连续复读、一起吐槽或明显的话题转变，都可以成为相关评论的素材；能自然表达新感受、观点或人格化反应时可以 TOPIC。评价复读现象与机械跟着复读不同，不因出现重复消息就一律排除；没有可评论的内容或只会重复原话时仍 IGNORE。\nREPLY：明确在延续与机器人的对话，适合回应当前发言者。\nIGNORE：没有自然且相关的参与点。别人之间的私事、只适合特定对象回答的问题仍应忽略，不能借 TOPIC 绕过谈话关系判断。\n不需要有人提问、艾特机器人或邀请发言才可选择 TOPIC。不要为了插话而强行评论；以上分类说明用于细化原规则中的重复刷屏与回应对象判断。",
+        "description": "主动接话判断提示词",
+        "hint": "可自定义判断标准或回复风格；不包含固定角色、群号、昵称或服务商。"
+      },
+      "reply_prompt": {
+        "type": "string",
+        "default": "按当前人格自然、简短地参与群聊。根据本轮谈话关系决定回应对象，不认领别人的经历，不复述判断过程或系统说明。",
+        "description": "主动接话回复风格提示词",
+        "hint": "可自定义判断标准或回复风格；不包含固定角色、群号、昵称或服务商。"
+      }
+    }
   }
 }
