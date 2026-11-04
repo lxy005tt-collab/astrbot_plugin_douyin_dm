@@ -569,6 +569,9 @@ class MimiDouyinDM(Star):
                     req.func_tool.remove_tool('douyin_comment_watched')
         if permitted:
             state='当前评论开关开启。' if self.config.get('allow_public_comments',False) else '当前评论开关关闭，只浏览和聊天，不尝试评论。'
+            if event.get_extra('douyin_proactive_tool_loop',False) is True:
+                req.extra_user_content_parts.append(TextPart(text='本轮来自已有主动聊天定时调度，可以选择 douyin_watch_recommended 读取一条推荐作品再聊。没读过或 state=skipped 不宣称看过；评论只使用 douyin_comment_watched，须依据真实读取内容，只有 state=sent 且 comment_id 才确认发出。'+state).mark_as_temp())
+                return
             req.extra_user_content_parts.append(TextPart(text='想刷抖音时可调用 douyin_watch_recommended：实际读取一条推荐作品，或传入具体作品链接。不要只凭打开页面、标题或自己的计划宣称看过。如果返回 state=skipped，说明时长超限或无法确认，未下载、未观看；按返回提示换一个新视频，可再次调用并将 url 留空。读完后可继续聊天；评论使用 douyin_comment_watched，只有返回 sent 和 comment_id 才能宣称发出。'+state).mark_as_temp())
 
     @filter.llm_tool(name='douyin_watch_recommended')
