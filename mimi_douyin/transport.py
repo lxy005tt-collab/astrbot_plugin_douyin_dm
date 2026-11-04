@@ -89,12 +89,14 @@ class BrowserWorker:
             process=self.process
             if not process or process.returncode is not None:return
             try:await self._call(process,'close',timeout=10)
-            except (BrowserError,ConnectionError):pass
-            if process.stdin:process.stdin.close()
-            try:await asyncio.wait_for(process.wait(),5)
-            except asyncio.TimeoutError:
-                process.kill();await process.wait()
-            if self.reader:await asyncio.gather(self.reader,return_exceptions=True)
+            except (BrowserError,OSError):pass
+            finally:
+                if process.stdin:process.stdin.close()
+                try:await asyncio.wait_for(process.wait(),5)
+                except asyncio.TimeoutError:
+                    process.kill();await process.wait()
+                if self.reader:await asyncio.gather(self.reader,return_exceptions=True)
+
 
 
 class Ledger:

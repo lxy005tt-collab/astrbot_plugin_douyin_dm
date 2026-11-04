@@ -128,6 +128,44 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         await self.worker.close()
         self.spawn.assert_awaited_once()
 
+    async def test_close_command_timeout_still_reaps_process(self):
+        await self.worker.start()
+        call = self.worker._call
+
+        async def short_call(process, action, timeout):
+            return await call(process, action, timeout=0.01)
+
+        with patch.object(self.worker, '_call', short_call), patch.object(
+                self.worker.process.stdin, 'write', Mock()):
+            await self.worker.close()
+        self.assertIsNotNone(self.worker.process.returncode)
+        self.assertTrue(self.worker.reader.done())
+        self.assertFalse(self.worker.pending)
+
+    async def test_close_oserror_still_reaps_process(self):
+        await self.worker.start()
+        with patch.object(self.worker, '_call', AsyncMock(side_effect=OSError('write failed'))):
+            await self.worker.close()
+        self.assertIsNotNone(self.worker.process.returncode)
+        self.assertTrue(self.worker.reader.done())
+
+    async def test_cancel_close_still_reaps_process_and_propagates_cancel(self):
+        await self.worker.start()
+        entered = asyncio.Event()
+
+        async def blocked(*args, **kwargs):
+            entered.set()
+            await asyncio.Future()
+
+        with patch.object(self.worker, '_call', AsyncMock(side_effect=blocked)):
+            closing = asyncio.create_task(self.worker.close())
+            await entered.wait()
+            closing.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await closing
+        self.assertIsNotNone(self.worker.process.returncode)
+        self.assertTrue(self.worker.reader.done())
+
     async def test_old_reader_eof_does_not_clear_restarted_process_requests(self):
         release = asyncio.Event()
         original_read = self.worker._read
