@@ -52,12 +52,12 @@ class GuideTests(unittest.IsolatedAsyncioTestCase):
     async def test_schedule_guidance_and_comments_off(self):
         req = await self.run_hook()
         self.assertIn("已有主动聊天定时调度", req.extra_user_content_parts[0].text)
-        self.assertIn("评论开关关闭", req.extra_user_content_parts[0].text)
+        self.assertIn("本轮只浏览和聊天，不发表评论", req.extra_user_content_parts[0].text)
         self.assertEqual([t.name for t in req.func_tool.func_list],
                          ["douyin_watch_recommended"])
 
     async def test_comments_opt_in(self):
-        req = await self.run_hook(comments=True)
+        req = await self.run_hook(marker=False, comments=True)
         self.assertIsNotNone(req.func_tool.get_tool("douyin_comment_watched"))
         self.assertIn("评论开关开启", req.extra_user_content_parts[0].text)
 
