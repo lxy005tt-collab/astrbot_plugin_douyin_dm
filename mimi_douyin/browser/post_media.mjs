@@ -18,13 +18,17 @@ export function videoDurationDecision(duration, maxSeconds=180) {
     duration:known?duration:null,max_duration_seconds:limit,retry_action:'choose_another_video',message};
 }
 
-export function postImages(detail) {
+export function postImageCandidates(detail) {
   const images=Array.isArray(detail?.images)&&detail.images.length?detail.images:detail?.image_post_info?.images;
   if(!Array.isArray(images))return [];
   return images.map(image=>{
     const lists=[image.display_image?.url_list,image.owner_watermark_image?.url_list,image.url_list,image.download_url_list];
-    return lists.flatMap(list=>Array.isArray(list)?list:[]).find(url=>typeof url==='string'&&url.startsWith('https:'));
+    return [...new Set(lists.flatMap(list=>Array.isArray(list)?list:[]).filter(url=>typeof url==='string'&&url.startsWith('https:')))].slice(0,3);
   });
+}
+
+export function postImages(detail) {
+  return postImageCandidates(detail).map(candidates=>candidates[0]);
 }
 
 async function downloadAsset(url,{context,page,settings,mediaHost},expected,remaining) {
@@ -75,7 +79,8 @@ export async function readPost(args,environment) {
     const id=new URL(tab.url()).pathname.match(/\/(?:video|note)\/(\d+)/)?.[1]
       ||url.pathname.match(/\/(?:video|note)\/(\d+)/)?.[1];
     if(detail && id && String(detail.aweme_id)!==id)throw new Error('作品详情标识不匹配，未读取其他内容。');
-    const images=postImages(detail);
+    const imageCandidates=postImageCandidates(detail);
+    const images=imageCandidates.map(candidates=>candidates[0]);
     const postID=String(detail?.aweme_id||id||'');
     const info={kind:images.length?'images':'video',description:String(detail?.desc||''),
       source:postID?`https://www.douyin.com/${images.length?'note':'video'}/${postID}`:publicURL(tab.url()),post_id:postID,image_count:images.length,
@@ -127,11 +132,24 @@ export async function readPost(args,environment) {
     let remaining=(settings.max_download_mb||64)*1024*1024;
     if(images.length) {
       if(images.length>Number(settings.max_post_images||30))throw new Error('图文图片数量超过设置，未仅下载封面。');
-      if(images.some(url=>!url))throw new Error('图文中有原图地址缺失，未把部分图片当作完整作品。');
+      if(imageCandidates.some(candidates=>!candidates.length))throw new Error('图文中有原图地址缺失，未把部分图片当作完整作品。');
       const files=[];
-      for(const url of images){const image=await downloadAsset(url,environment,'image',Math.min(remaining,20*1024*1024));
-        files.push(image);remaining-=image.bytes;}
-      return {...info,images:files,bytes:files.reduce((sum,image)=>sum+image.bytes,0)};
+      try {
+        for(const candidates of imageCandidates){
+          let image;
+          let lastError;
+          for(const candidate of candidates){
+            try { image=await downloadAsset(candidate,environment,'image',Math.min(remaining,20*1024*1024)); break; }
+            catch(error) { lastError=error; }
+          }
+          if(!image)throw new Error('图文第 '+(files.length+1)+' 张图片下载失败：'+(lastError?.message||'没有可用候选地址'));
+          files.push(image);remaining-=image.bytes;
+        }
+        return {...info,images:files,bytes:files.reduce((sum,image)=>sum+image.bytes,0)};
+      } catch(error) {
+        await Promise.all(files.map(file=>fs.rm(file.path,{force:true}).catch(()=>{})));
+        throw error;
+      }
     }
     if(!detail?.video && /\/note\//.test(tab.url()))throw new Error('图文详情没有返回原图，未用封面代替。');
     await tab.waitForFunction(()=>[...document.querySelectorAll('video')].some(video=>video.currentSrc&&video.readyState>=1),undefined,{timeout:20000});
