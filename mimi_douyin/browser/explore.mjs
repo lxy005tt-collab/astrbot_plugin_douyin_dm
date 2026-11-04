@@ -67,15 +67,18 @@ export async function browsePost(args,environment) {
 
 export async function publishComment(args,environment) {
   const {context,page,siteHost}=environment;
-  const source=new URL(args.url);const postID=source.pathname.match(/\/(?:video|note)\/(\d{12,24})/)?.[1];
+  const source=new URL(args.url);const postID=source.pathname.match(/^\/(?:video|note)\/(\d{12,24})\/?$/)?.[1];
   const text=String(args.text||'').trim();
-  if(source.protocol!=='https:'||!siteHost(source.hostname)||!postID||!text||text.length>200)
+  if(source.protocol!=='https:'||!siteHost(source.hostname)||source.username||source.password||!postID||!text||text.length>200)
     throw new Error('评论需要有效作品链接和 1～200 字正文。');
   const tab=await openBackgroundPage(context,page);
   try {
     await tab.goto(source.href,{waitUntil:'domcontentloaded',timeout:45000});
     if(/验证码|安全验证/.test(await tab.title()))throw new Error('评论页要求账号验证，请先手动完成。');
-    if(!new URL(tab.url()).pathname.includes(postID))throw new Error('评论目标已改变，未提交。');
+    const target=new URL(tab.url());
+    if(target.protocol!=='https:'||!siteHost(target.hostname)||target.username||target.password
+      ||target.pathname.match(/^\/(?:video|note)\/(\d{12,24})\/?$/)?.[1]!==postID)
+      throw new Error('评论目标已改变，未提交。');
     const editor=await getCommentEditor(tab);
     await editor.focus();await editor.press('Control+A');await editor.press('Backspace');await captureEmptyCommentControls(tab);await tab.keyboard.insertText(text);
     await tab.waitForTimeout(100);
@@ -83,13 +86,31 @@ export async function publishComment(args,environment) {
     if(entered.replace(/[\u200b\ufeff]/g,'').trim()!==text)throw new Error('评论输入不一致，未提交。');
     const submit=await getCommentSubmit(tab);
     const receipt=tab.waitForResponse(response=>{
-      if(!/\/aweme\/v1\/web\/comment\/publish\//.test(response.url()))return false;
-      const params=new URLSearchParams(response.request().postData()||'');
-      return params.get('aweme_id')===postID&&params.get('text')===text;
-    },{timeout:15000}).then(response=>response.json()).catch(()=>null);
-    await submit.evaluate(button=>{if(button.disabled||button.getAttribute('aria-disabled')==='true')throw new Error('评论发送按钮不可用。');button.click();});
+      try {
+        const endpoint=new URL(response.url());
+        if(!siteHost(endpoint.hostname)||!endpoint.pathname.endsWith('/aweme/v1/web/comment/publish/')
+          ||response.request().method()!=='POST')return false;
+        const params=new URLSearchParams(response.request().postData()||'');
+        return params.get('aweme_id')===postID&&params.get('text')===text;
+      } catch {return false;}
+    },{timeout:15000}).then(async response=>{
+      try {return await response.json();} catch {return null;}
+    }).catch(()=>null);
+    try {
+      await submit.evaluate(button=>{
+        if(button.disabled||button.getAttribute('aria-disabled')==='true')throw new Error('评论发送按钮不可用。');
+        button.click();
+      });
+    } catch {
+      const result=await receipt;
+      if(result?.status_code===0&&result.comment?.cid)
+        return {state:'sent',post_id:postID,comment_id:String(result.comment.cid),receipt:'server_comment_id'};
+      return {state:'unknown',post_id:postID,receipt:'dispatch_unconfirmed'};
+    }
     const result=await receipt;
     if(result?.status_code===0&&result.comment?.cid)return {state:'sent',post_id:postID,comment_id:String(result.comment.cid),receipt:'server_comment_id'};
-    return {state:result&&result.status_code!==0?'failed':'unknown',post_id:postID,receipt:'no_confirmed_comment_id'};
-  } finally {await tab.close();}
+    if(result&&Number.isFinite(Number(result.status_code))&&Number(result.status_code)!==0)
+      return {state:'failed',post_id:postID,receipt:'server_rejection'};
+    return {state:'unknown',post_id:postID,receipt:'no_confirmed_comment_id'};
+  } finally {await tab.close().catch(()=>{});}
 }
