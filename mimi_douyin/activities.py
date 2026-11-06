@@ -41,6 +41,10 @@ class ActivityEngine:
             return {'record':record,'source':source}
 
     async def comment(self,url,text):
+        async with self.lock:
+            return await self._comment(url,text)
+
+    async def _comment(self,url,text):
         owner=self.owner
         if not owner.config.get('allow_public_comments',False):raise BrowserError('评论开关未开启。')
         import re
@@ -60,5 +64,7 @@ class ActivityEngine:
             # A timeout can occur after the site accepted a comment. Keep the
             # unknown marker so the same text is never submitted automatically.
             raise
+        if receipt.get('state') == 'sent' and not receipt.get('comment_id'):
+            receipt = {**receipt, 'state': 'unknown', 'reason': 'missing_comment_id'}
         owner.ledger.put(key,{**receipt,'text':text,'submitted_at':time.time()})
         return receipt
