@@ -22,7 +22,7 @@ class ConversationSwitching:
         if group and not self.owner.config.get('group_chat_enabled',True):return False
         return row['key'] in self.owner.config.get('group_whitelist' if group else 'private_whitelist',[])
 
-    async def poll(self):
+    async def poll(self,capture=None):
         owner=self.owner
         if getattr(owner,'current_event',None) or owner.job_lock.locked():return None
         listing=await owner.browser.call('conversations')
@@ -71,10 +71,15 @@ class ConversationSwitching:
             fresh=[items[ids.index(row['latest_message_id'])]]
         owner.binding={'peer':peer,'bound_at':time.time(),'automatic':True}
         owner.ledger.put('binding',owner.binding)
+        fresh=[item for item in fresh if item['sender']=='peer']
+        if capture:
+            fresh=[item if item.get('native_id') else {**item,'_delivery_key':f'switch:{cid}:{previous}:{index}'}
+                for index,item in enumerate(fresh)]
+        if fresh and capture:capture(peer,fresh)
         owner.ledger.observe(peer['key'],items,prime=True)
         self.frontiers[cid]=items[-1].get('native_id') or row['latest_message_id']
         self.served[cid]=now
-        incoming=[item for item in fresh if item['sender']=='peer']
+        incoming=fresh
         if incoming and (cid!=active or cid not in self.hold_until):
             # Optional override: zero disables holding; absent config works as-is.
             configured=float(owner.config.get('conversation_hold_seconds',3))

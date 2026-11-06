@@ -95,12 +95,18 @@
   "poll_seconds": {
     "type": "int",
     "default": 4,
-    "description": "检查新私信的间隔秒数"
+    "description": "空闲时检查新消息的间隔秒数"
+  },
+  "adaptive_polling": {
+    "type": "bool",
+    "default": true,
+    "description": "活跃聊天时加快检查与合并",
+    "hint": "有消息后的 30 秒内最多每秒检查一次；连续消息安静约 0.8 秒即开始处理，合并总等待不超过下方设置。关闭后使用固定检查与合并间隔。"
   },
   "merge_seconds": {
     "type": "int",
     "default": 3,
-    "description": "等待合并连续私信的秒数"
+    "description": "合并连续消息的最长等待秒数"
   },
   "reply_timeout_seconds": {
     "type": "int",

@@ -7,8 +7,9 @@ import {createHash, randomUUID} from 'node:crypto';
 import readline from 'node:readline';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {enterReply,submitReply} from './browser_actions.mjs';
+import {ConversationIdentities} from './conversation_identity.mjs';
 
-let context, page, settings;
+let context, page, settings, identities, identityFile;
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const siteHost=host=>host==='douyin.com'||host.endsWith('.douyin.com')||host==='iesdouyin.com'||host.endsWith('.iesdouyin.com');
 const mediaHost=host=>siteHost(host)||['douyinvod.com','douyincdn.com','douyinpic.com','bytecdn.cn','byteimg.com','byteimgtos.com','pstatp.com'].some(x=>host===x||host.endsWith('.'+x));
@@ -16,6 +17,14 @@ const publicURL=value=>{try{const u=new URL(value);return u.origin+u.pathname;}c
 
 async function open(config) {
   settings=config;
+  identityFile=path.join(config.profile,'conversation-identities.json');
+  let known={};
+  try { known=JSON.parse(await fs.readFile(identityFile,'utf8')); }
+  catch(error) { if(error.code!=='ENOENT')throw new Error('会话身份记录无法读取，请保留该文件并检查浏览器资料目录。'); }
+  identities=new ConversationIdentities(hash,publicURL,known,config.private_whitelist||[]);
+  if(config.restore_peer)identities.remember(config.restore_peer,config.restore_peer.key);
+  await fs.mkdir(config.profile,{recursive:true});
+  await saveIdentities();
   if(context && page && !page.isClosed())return status();
   const require=createRequire(config.playwright_package);
   const {chromium}=require('playwright');
@@ -66,6 +75,13 @@ async function open(config) {
   return status();
 }
 
+async function saveIdentities() {
+  if(!identities.dirty)return;
+  await fs.writeFile(identityFile+'.tmp',JSON.stringify(Object.fromEntries(identities.known)),'utf8');
+  await fs.rename(identityFile+'.tmp',identityFile);
+  identities.dirty=false;
+}
+
 async function status() {
   if(!page || page.isClosed())return {open:false,logged_in:false,state:'browser_closed'};
   const cookies=await context.cookies('https://www.douyin.com');
@@ -83,17 +99,24 @@ async function snapshot(options={}) {
   const version=(await fs.stat(domFile)).mtimeMs;
   const {readChatDOM}=await import(pathToFileURL(domFile).href+'?v='+version);
   const data=await page.evaluate(readChatDOM,{debug:!!options.debug,conversations_only:!!options.conversations_only});
-  for(const row of data.conversations||[]){
-    row.key=row.conversation_id?hash((row.conversation_type===2?'group:':'')+row.conversation_id):'';
+  // Resolve the open chat first: its header can supply a legacy profile link
+  // missing from the list, and both must share the resolved key in this result.
+  if(data.ready){
+    const peer=data.peer;
+    const group=peer.conversation_type==='group';
+    if(group&&!peer.conversation_id)throw new Error('尚未取得稳定的群会话 ID，请打开群资料后重试绑定。');
+    peer.key=identities.key(peer);
+    identities.remember(peer,peer.key);
+    peer.identity_kind=peer.conversation_id?'conversation_id':peer.link?'profile_link':'name_and_avatar';
+    peer.link=publicURL(peer.link);peer.avatar=publicURL(peer.avatar);
   }
+  for(const row of data.conversations||[]){
+    row.key=row.conversation_id?identities.key(row):'';
+    row.link=publicURL(row.link);row.avatar=publicURL(row.avatar);
+  }
+  await saveIdentities();
   if(!data.ready)return data;
-  const peer=data.peer;
-  const group=peer.conversation_type==='group';
-  if(group&&!peer.conversation_id)throw new Error('尚未取得稳定的群会话 ID，请打开群资料后重试绑定。');
-  const identity=group?'group:'+peer.conversation_id:peer.link?publicURL(peer.link):peer.conversation_id || (peer.name&&peer.avatar?peer.name+'|'+publicURL(peer.avatar):'');
-  peer.identity_kind=peer.link?'profile_link':peer.conversation_id?'conversation_id':'name_and_avatar';
-  peer.key=identity?hash(identity):'';
-  peer.link=publicURL(peer.link);peer.avatar=publicURL(peer.avatar);
+  const group=data.peer.conversation_type==='group';
   const duplicates=new Map();
   for(const item of data.items) {
     if(group&&item.sender_id&&!/^\d+$/.test(item.sender_id))item.sender_id='dy-member-'+hash(item.sender_id).slice(0,24);

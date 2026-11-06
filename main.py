@@ -30,6 +30,7 @@ from .mimi_douyin.share_request import shared_post_request
 from .conversation_context import ConversationContext
 from .conversation_switching import ConversationSwitching
 from .group_conversation import GroupConversation
+from .pending_messages import PendingMessages, poll_interval, merge_window
 
 
 def perception_error_frames(exc):
@@ -49,6 +50,8 @@ class MimiDouyinDM(Star):
         self.data_dir=StarTools.get_data_dir('astrbot_plugin_douyin_dm')
         self.data_dir.mkdir(parents=True,exist_ok=True)
         self.ledger=Ledger(self.data_dir/'messages.db')
+        self.inbox=PendingMessages(self.ledger)
+        self.last_activity=0
         self.binding=self.ledger.get('binding')
         self.runtime=RuntimeEnvironment(config,self.data_dir)
         self.browser=BrowserWorker(self.runtime.settings())
@@ -131,6 +134,7 @@ class MimiDouyinDM(Star):
             'whitelist_enabled':bool(self.config.get('whitelist_enabled',True)),
             'private_whitelist':self.config.get('private_whitelist',[]),
             'auto_switch_enabled':bool(self.config.get('auto_switch_enabled',False)),
+            'pending_messages':self.inbox.status(),
             'recent_jobs':[{'id':r[0],'state':r[1],'updated':r[2]} for r in recent]}
 
     async def api_status(self):return {'status':'ok','data':self.status()}
@@ -279,8 +283,13 @@ class MimiDouyinDM(Star):
                 for item in [x for x in snapshot['items'] if x['sender']=='peer' and x['kind']=='video' and x['key'] in watched][-3:]:
                     try:
                         source=await self._prepare_video_item(item,snapshot['peer']['key'],1)
-                        event=DouyinEvent(self,'memory-'+uuid.uuid4().hex,[item],[source['path']],[],peer=snapshot['peer'])
-                        memories.append(await remember_video(self,event,[source],time.time()))
+                        if source.get('state')=='skipped':
+                            skipped.append({'message_key':item['key'],'reason':source.get('message') or source.get('reason') or '作品未读取。'})
+                            continue
+                        paths=[source['path']] if source.get('path') else []
+                        if not paths and not source.get('images'):raise BrowserError('作品没有可供补存的实际媒体。')
+                        event=DouyinEvent(self,'memory-'+uuid.uuid4().hex,[item],paths,[],peer=snapshot['peer'])
+                        memories.append(await remember_video(self,event,[source],watched[item['key']]))
                     except (BrowserError,OSError,ValueError) as exc:
                         skipped.append({'message_key':item['key'],'reason':str(exc)[:200]})
                 return {'saved_videos':memories,'skipped':skipped}
@@ -296,6 +305,7 @@ class MimiDouyinDM(Star):
                     raise BrowserError('请先在接入设置中开启群聊接入。')
                 if not snapshot.get('direction_proven'):
                     raise BrowserError('尚未从页面确认收发方向，请保持双方已有消息的私信打开。')
+                self.inbox.discard()
                 self.binding={'peer':self.with_account_identity(snapshot['peer']),'bound_at':time.time()}
                 self.ledger.put('binding',self.binding)
                 whitelist='group_whitelist' if snapshot['peer'].get('conversation_type')=='group' else 'private_whitelist'
@@ -314,16 +324,19 @@ class MimiDouyinDM(Star):
                 self._check_profile(snapshot['peer']['key'],snapshot['peer'])
                 self.switching.reset()
                 if self.config.get('auto_switch_enabled',False):await self.switching.poll()
+                else:self.ledger.observe(snapshot['peer']['key'],snapshot['items'],prime=True)
                 self.config['auto_reply_enabled']=True;self._save_config()
                 self.platform.status=PlatformStatus.RUNNING
                 self.state='listening';return self.status()
             if action=='pause':
                 self.config['auto_reply_enabled']=False;self._save_config();self.state='paused'
                 self.switching.reset()
+                self.inbox.discard()
                 self.platform.status=PlatformStatus.STOPPED
-                if self.current_event and not self.current_event.done.done():
+                if self.current_event:
+                    self._stop_generation(self.current_event)
                     self.ledger.job(self.current_event.job_id,'paused')
-                    self.current_event.done.set_result('paused')
+                    if not self.current_event.done.done():self.current_event.done.set_result('paused')
                 return self.status()
             raise ValueError('可用操作：open、current、bind、start、pause、status。')
 
@@ -352,65 +365,135 @@ class MimiDouyinDM(Star):
         if settings.get('enable_id_white_list') and settings.get('id_whitelist') and umo not in settings['id_whitelist']:
             raise BrowserError('此会话被 AstrBot 白名单阻止。请将 '+umo+' 加入对应配置的白名单，或为抖音分配独立配置。')
 
+    @staticmethod
+    def _stop_generation(event):
+        event.set_extra('agent_stop_requested',True)
+        event.stop_event()
+
+    def _capture(self,snapshot):
+        peer=snapshot['peer']
+        fresh=self.ledger.observe(peer['key'],snapshot['items'],
+            on_fresh=lambda items:self.inbox.add(peer,items))
+        self.group_conversation.observe(snapshot)
+        if fresh:self.last_activity=time.monotonic()
+        return fresh
+
+    async def _pending_snapshot(self,peer):
+        self._check_whitelist(peer['key'],peer);self._check_profile(peer['key'],peer)
+        automatic=self.config.get('auto_switch_enabled',False)
+        if automatic:
+            row={'key':peer['key'],'conversation_type':2 if peer.get('conversation_type')=='group' else 1}
+            if not self.switching.allowed(row):raise BrowserError('待处理会话已不在自动切换白名单中。')
+        elif not self.binding or self.binding['peer']['key']!=peer['key']:
+            raise BrowserError('待处理消息属于其他绑定会话，未发送。')
+        snapshot=await self.browser.call('snapshot')
+        if automatic and (not snapshot.get('ready') or snapshot['peer']['key']!=peer['key']):
+            if not peer.get('conversation_id'):raise BrowserError('待处理会话缺少稳定会话 ID，请重新绑定。')
+            snapshot=await self.browser.call('select_conversation',{'conversation_id':peer['conversation_id']})
+        if not snapshot.get('ready') or snapshot['peer']['key']!=peer['key'] or not snapshot.get('direction_proven'):
+            raise BrowserError('尚未确认待处理消息的会话及收发方向。')
+        if automatic:
+            self.binding={'peer':snapshot['peer'],'bound_at':time.time(),'automatic':True}
+            self.ledger.put('binding',self.binding)
+        self._check_peer(snapshot)
+        return snapshot
+
+    async def _receive_once(self):
+        peer_key=None
+        try:
+            async with self.action_lock:
+                if not self.config.get('auto_reply_enabled',False) or self.job_lock.locked():return
+                pending=self.inbox.next()
+                if pending:
+                    peer_key=pending[0]['key']
+                    snapshot=await self._pending_snapshot(pending[0]);fresh=self._capture(snapshot)
+                elif self.config.get('auto_switch_enabled',False):
+                    result=await self.switching.poll(capture=self.inbox.add)
+                    if not result:return
+                    snapshot,fresh=result
+                    peer_key=snapshot['peer']['key']
+                    self.group_conversation.observe(snapshot)
+                else:
+                    snapshot=await self.browser.call('snapshot');self._check_peer(snapshot)
+                    peer_key=snapshot['peer']['key'];fresh=self._capture(snapshot)
+            if fresh:self.last_activity=time.monotonic()
+            if not self.inbox.next(peer_key):return
+            maximum,quiet=merge_window(self.config)
+            deadline=time.monotonic()+maximum
+            # A retry already waited through the merge window; do not delay it again.
+            while not pending and quiet and time.monotonic()<deadline:
+                await asyncio.sleep(min(quiet,max(0,deadline-time.monotonic())))
+                async with self.action_lock:
+                    if not self.config.get('auto_reply_enabled',False):return
+                    second=await self.browser.call('snapshot');self._check_peer(second)
+                    if second['peer']['key']!=peer_key:raise BrowserError('合并消息时会话已切换，消息保留待处理。')
+                    more=self._capture(second);self.switching.observed(second)
+                if not more:break
+            pending=self.inbox.next(peer_key)
+            if pending and self.config.get('auto_reply_enabled',False):
+                await self._handle(pending[1],pending[0],delivery=self.inbox)
+                self.last_activity=time.monotonic()
+        except asyncio.CancelledError:raise
+        except Exception:
+            if peer_key:self.inbox.retry(peer_key)
+            raise
+
     async def _monitor(self):
         while not self.closed:
             try:
                 if (self.config.get('enabled',True) and self.config.get('auto_reply_enabled',False)
                         and self.binding and not self.action_lock.locked()):
                     if not self.browser.process or self.browser.process.returncode is not None:await self._open_browser()
-                    async with self.action_lock:
-                        if self.config.get('auto_switch_enabled',False):
-                            result=await self.switching.poll()
-                            if result:snapshot,fresh=result
-                            else:snapshot=None;fresh=[]
-                        else:
-                            snapshot=await self.browser.call('snapshot');self._check_peer(snapshot)
-                            fresh=self.ledger.observe(snapshot['peer']['key'],snapshot['items'])
-                    self.state='listening';self.last_error=''
-                    if snapshot:self.group_conversation.observe(snapshot)
-                    if fresh:
-                        peer_key=snapshot['peer']['key']
-                        await asyncio.sleep(max(0,min(15,float(self.config.get('merge_seconds',3)))))
-                        second=await self.browser.call('snapshot');self._check_peer(second)
-                        if second['peer']['key']!=peer_key:continue
-                        fresh.extend(self.ledger.observe(peer_key,second['items']))
-                        self.group_conversation.observe(second)
-                        self.switching.observed(second)
-                        await self._handle(fresh,snapshot['peer'])
+                    await self._receive_once()
+                    if self.config.get('auto_reply_enabled',False):
+                        self.state='listening';self.last_error=''
             except asyncio.CancelledError:raise
             except Exception as exc:
                 message=str(exc)[:400]
                 if message!=self.last_error:logger.warning('[与bot刷抖音] 等待处理：%s',message)
                 self.last_error=message;self.state='needs_attention'
-            await asyncio.sleep(max(2,float(self.config.get('poll_seconds',4))))
+            await asyncio.sleep(poll_interval(self.config,self.last_activity) if self.state=='listening' else max(2,float(self.config.get('poll_seconds',4))))
 
-    async def _handle(self,items,peer):
+    async def _handle(self,items,peer,*,delivery=None):
         peer=self.with_account_identity(peer)
         async with self.job_lock:
             if peer.get('conversation_type')!='group':
-                await self._process_items(items,peer);return
+                await self._process_items(items,peer,delivery=delivery)
+                if delivery:delivery.finish(peer,items)
+                return
             self.group_conversation.observe({'peer':peer,'items':items})
             items=[{**item,'sender_name':item.get('sender_name') or self.group_conversation.member_name(peer,item.get('sender_id'))} for item in items]
             batches=[]
             for item in items:
                 sender=item.get('sender_id')
-                if not sender:continue
+                if not sender:
+                    if delivery:delivery.finish(peer,[item])
+                    continue
                 if batches and batches[-1][-1].get('sender_id')==sender:batches[-1].append(item)
                 else:batches.append([item])
             for batch in batches:
+                if delivery and (self.closed or not self.config.get('auto_reply_enabled',False)):return
+                if delivery:
+                    self._check_whitelist(peer['key'],peer);self._check_profile(peer['key'],peer)
                 addressed=addressed_to_bot(batch,peer,self.config.get('group_mention_names',[]))
                 mode=self.config.get('group_reply_mode','仅@机器人');style='DIRECT'
                 recent=self.group_conversation.recent(peer,batch)
-                if mode=='仅@机器人' and not addressed:continue
+                if mode=='仅@机器人' and not addressed:
+                    if delivery:delivery.finish(peer,batch)
+                    continue
                 if mode=='智能接话' and not addressed:
-                    style=await self.group_conversation.decide(peer,batch,recent)
-                    if not style:continue
-                references,notice=(await self.group_conversation.referenced_media(peer,batch,recent)) if style!='TOPIC' else ([],None)
+                    style,references,notice=await self.group_conversation.plan(peer,batch,recent)
+                    if not style:
+                        if delivery:delivery.finish(peer,batch)
+                        continue
+                else:references,notice=await self.group_conversation.referenced_media(peer,batch,recent)
                 payload={'messages':recent,'reply_style':style,'mentioned_self':addressed,
                     'referenced_shares':[{'message_id':item.get('native_id') or item['key'],'sender_id':item.get('sender_id'),'sender_name':item.get('sender_name')} for item in references]}
-                await self._process_items(batch,peer,group_context=payload,referenced_media=references,reference_notice=notice)
+                await self._process_items(batch,peer,group_context=payload,referenced_media=references,reference_notice=notice,delivery=delivery)
+                if delivery:delivery.finish(peer,batch)
 
-    async def _process_items(self,items,peer,*,group_context=None,referenced_media=(),reference_notice=None):
+    async def _process_items(self,items,peer,*,group_context=None,referenced_media=(),reference_notice=None,delivery=None):
+        if self.closed or not self.config.get('auto_reply_enabled',False):return
         peer_key=peer['key'];self._check_whitelist(peer_key,peer)
         self._check_profile(peer_key,peer)
         job_id=uuid.uuid4().hex
@@ -421,7 +504,7 @@ class MimiDouyinDM(Star):
         video_items=[x for x in items if x['kind']=='video']
         current_keys={item['key'] for item in video_items}
         video_items.extend(item for item in referenced_media if item['key'] not in current_keys)
-        videos=[];errors=[];video_sources=[]
+        videos=[];errors=[];video_sources=[];downloaded_items=[]
         if reference_notice:errors.append(reference_notice)
         media_receipts=[]
         for item in video_items:
@@ -434,6 +517,7 @@ class MimiDouyinDM(Star):
                     continue
                 if source.get('path'):videos.append(source['path'])
                 video_sources.append(source)
+                downloaded_items.append(item)
                 media_receipts.append({'state':'downloaded','kind':source.get('kind','video'),
                     'post_id':source.get('post_id'),'image_count':len(source.get('images',[])),
                     'share_lookup':source.get('share_lookup')})
@@ -452,7 +536,7 @@ class MimiDouyinDM(Star):
         if video_sources and (uses_text_transcription(self.config) or any(source.get('kind')=='images' for source in video_sources)):
             try:
                 transcript=await transcribe_video(self,video_sources)
-                self.group_conversation.media_read(peer,video_items,format_transcript(transcript))
+                self.group_conversation.media_read(peer,downloaded_items,format_transcript(transcript))
                 details['perception']={'state':'read','image_count':transcript.get('inspected_image_count',0),
                     'cache_hit':transcript.get('cache_hit',False),'request_attempts':transcript.get('request_attempts')}
                 logger.info('[与bot刷抖音] 视频已由接口 %s 转述为文本。',transcript['provider_id'])
@@ -476,16 +560,29 @@ class MimiDouyinDM(Star):
             event.set_extra('douyin_group_reply_style',group_context['reply_style'])
         event.set_extra('douyin_video_sources',video_sources)
         if transcript:event.set_extra('douyin_video_transcript',transcript)
-        self.current_event=event;self.ledger.job(job_id,'generating')
-        manager=self.context.conversation_manager
-        if not await manager.get_curr_conversation_id(event.unified_msg_origin):
-            await manager.new_conversation(event.unified_msg_origin,persona_id=self.config.get('persona_id') or None)
-        self.platform.commit_event(event)
+        self.current_event=event
         try:
-            await asyncio.wait_for(asyncio.shield(event.done),max(30,int(self.config.get('reply_timeout_seconds',180))))
-        except asyncio.TimeoutError:
-            self.ledger.job(job_id,'timeout');self.last_error='本次回复等待超时，没有自动重新发送。'
-        finally:self.current_event=None
+            self.ledger.job(job_id,'generating')
+            manager=self.context.conversation_manager
+            if not await manager.get_curr_conversation_id(event.unified_msg_origin):
+                await manager.new_conversation(event.unified_msg_origin,persona_id=self.config.get('persona_id') or None)
+            if self.closed or not self.config.get('auto_reply_enabled',False) or event.get_extra('agent_stop_requested'):
+                self.ledger.job(job_id,'paused');return
+            if delivery:delivery.submitted(peer,items,job_id)
+            self.platform.commit_event(event)
+            try:
+                await asyncio.wait_for(asyncio.shield(event.done),max(30,int(self.config.get('reply_timeout_seconds',180))))
+            except asyncio.TimeoutError:
+                self._stop_generation(event)
+                self.ledger.job(job_id,'timeout');self.last_error='本次回复等待超时，没有自动重新发送。'
+        except asyncio.CancelledError:
+            self._stop_generation(event)
+            self.ledger.job(job_id,'interrupted');raise
+        except Exception:
+            self.ledger.job(job_id,'failed');raise
+        finally:
+            if not event.done.done():event.done.cancel()
+            if self.current_event is event:self.current_event=None
         if self.config.get('remember_videos',True) and video_sources and event.get_extra('douyin_video_understood'):
             try:
                 receipt=await remember_video(self,event,video_sources)
@@ -607,6 +704,7 @@ class MimiDouyinDM(Star):
     @filter.on_agent_done()
     async def agent_finished(self,event,run_context,response):
         if not isinstance(event,DouyinEvent):return
+        if event.get_extra('agent_stop_requested'):return
         if (response is not None and response.role!='err' and not event.is_stopped()
                 and (event.get_extra('douyin_video_attached') or event.get_extra('douyin_video_transcript'))):
             event.set_extra('douyin_video_understood',True)
@@ -633,6 +731,7 @@ class MimiDouyinDM(Star):
 
     async def terminate(self):
         self.closed=True
+        if self.current_event:self._stop_generation(self.current_event)
         await self.cache.close()
         await self.setup.terminate()
         self.platform.status=PlatformStatus.STOPPED

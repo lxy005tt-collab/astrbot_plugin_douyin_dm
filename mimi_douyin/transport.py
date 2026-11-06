@@ -80,6 +80,7 @@ class BrowserWorker:
                 'max_download_mb':self.config.get('max_download_mb',64),
                 'max_video_duration_seconds':self.config.get('max_video_duration_seconds',180),
                 'max_post_images':self.config.get('max_post_images',30),'restore_peer':peer,
+                'private_whitelist':self.config.get('private_whitelist',[]),
                 'browser_channel':self.config.get('browser_channel',''),
                 'browser_executable':self.config.get('browser_executable',''),
                 'headless':bool(self.config.get('browser_headless',False))},timeout=90)
@@ -116,12 +117,16 @@ class Ledger:
         self.db.execute('INSERT OR REPLACE INTO state VALUES (?,?)',(key,json.dumps(value,ensure_ascii=False)))
         self.db.commit()
 
-    def observe(self,peer_key,items,*,prime=False):
+    def observe(self,peer_key,items,*,prime=False,on_fresh=None):
         key='snapshot:'+peer_key
         current=[{k:item.get(k) for k in ('fingerprint','native_id','sender')} for item in items]
         previous=self.get(key)
-        self.put(key,current)
-        if prime or previous is None:return []
+        epoch=(previous[0].get('_delivery_epoch',0) if previous else 0)+1
+        # Retain the receive sequence even across an empty/virtualized list.
+        if not current:current=[{'fingerprint':None,'native_id':None,'sender':None}]
+        current[0]['_delivery_epoch']=epoch
+        if prime or previous is None:
+            self.put(key,current);return []
         def identity(item):return (item.get('native_id') or item['fingerprint'],item['sender'])
         old=[identity(x) for x in previous];new=[identity(x) for x in current]
         overlap=0
@@ -129,8 +134,15 @@ class Ledger:
             if old[-length:]==new[:length]:overlap=length;break
         # Without an overlap we cannot distinguish old history, a virtual-list
         # reset, and new messages; re-baseline instead of replaying history.
-        if not overlap:return []
-        return [x for x in items[overlap:] if x['sender']=='peer']
+        fresh=[x for x in items[overlap:] if x['sender']=='peer'] if overlap else []
+        if on_fresh:
+            fresh=[item if item.get('native_id') else {**item,'_delivery_key':f'observation:{epoch}:{index}'}
+                for index,item in enumerate(fresh)]
+        # Persist the inbox before advancing the receive cursor. If the cursor
+        # write fails, the inbox deduplicates the next observation by message ID.
+        if fresh and on_fresh:on_fresh(fresh)
+        self.put(key,current)
+        return fresh
 
     def job(self,job_id,state,details=None):
         if details is None:

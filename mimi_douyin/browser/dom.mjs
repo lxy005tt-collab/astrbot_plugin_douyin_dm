@@ -83,6 +83,7 @@ export function readChatDOM({debug=false,conversations_only=false}={}) {
       const name=facts.conversation_names[0]||node.querySelector('[class$="title"],[class*="nickname"],[class*="NickName"],[class*="Name"],[class*="name"]')?.textContent?.trim()
         ||node.innerText?.trim().split('\n').find(Boolean)||'';
       return {index,name,conversation_id:facts.conversation_ids[0]||'',conversation_type:facts.conversation_types[0]||null,
+        link:node.querySelector('a[href*="/user/"]')?.href||'',avatar:node.querySelector('img')?.src||'',
         unread_count:facts.unread_counts.length?facts.unread_counts[0]:null,latest_message_id:facts.latest_message_ids[0]||'',
         activation_event:Object.keys(node).filter(key=>key.startsWith('__reactProps')).some(key=>typeof node[key]?.onMouseDown==='function')?'mousedown':'click',
         ...(debug?{facts,node:brief(node)}: {})};
