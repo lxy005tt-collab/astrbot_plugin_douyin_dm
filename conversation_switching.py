@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from .bridge import BrowserError
+from .mimi_douyin.errors import BrowserError
 
 
 class ConversationSwitching:
@@ -11,9 +11,10 @@ class ConversationSwitching:
         self.owner=owner
         self.frontiers=None
         self.served={}
+        self.hold_until={}
 
     def reset(self):
-        self.frontiers=None;self.served.clear()
+        self.frontiers=None;self.served.clear();self.hold_until.clear()
 
     def allowed(self,row):
         group=row.get('conversation_type')==2
@@ -40,10 +41,18 @@ class ConversationSwitching:
                 self.frontiers[cid]=latest;continue  # Newly authorized history is never replayed.
             if latest and latest!=self.frontiers[cid]:candidates.append(row)
         if not candidates:return None
-        row=min(candidates,key=lambda item:self.served.get(item['conversation_id'],0))
-        cid=row['conversation_id'];previous=self.frontiers[cid]
-        self.served[cid]=time.monotonic()
         current=await owner.browser.call('snapshot')
+        active=(current.get('peer') or {}).get('conversation_id') if current.get('ready') else None
+        active_row=next((row for row in candidates if row['conversation_id']==active),None)
+        now=time.monotonic()
+        holding=bool(active and self.hold_until.get(active,0)>now)
+        if holding and not active_row:return None
+        # Finish the initial active batch, then let the oldest waiting chat run.
+        if active_row and (holding or active not in self.served):
+            row=active_row
+        else:
+            row=min(candidates,key=lambda item:self.served.get(item['conversation_id'],float('-inf')))
+        cid=row['conversation_id'];previous=self.frontiers[cid]
         if not current.get('ready') or current['peer'].get('conversation_id')!=cid:
             current=await owner.browser.call('select_conversation',{'conversation_id':cid})
         if not current.get('ready') or current['peer'].get('conversation_id')!=cid:
@@ -64,7 +73,17 @@ class ConversationSwitching:
         owner.ledger.put('binding',owner.binding)
         owner.ledger.observe(peer['key'],items,prime=True)
         self.frontiers[cid]=items[-1].get('native_id') or row['latest_message_id']
-        return current,[item for item in fresh if item['sender']=='peer']
+        self.served[cid]=now
+        incoming=[item for item in fresh if item['sender']=='peer']
+        if incoming and (cid!=active or cid not in self.hold_until):
+            # Optional override: zero disables holding; absent config works as-is.
+            configured=float(owner.config.get('conversation_hold_seconds',3))
+            # Cover the monitor's merge + poll cadence, with 1s scheduling slack.
+            cadence=max(2,float(owner.config.get('poll_seconds',4)))+max(0,min(15,float(owner.config.get('merge_seconds',3))))+1
+            duration=min(15,max(configured,cadence)) if configured>0 else 0
+            # Same-visit follow-ups never renew this fixed deadline.
+            self.hold_until={cid:time.monotonic()+duration}
+        return current,incoming
 
     def observed(self,snapshot):
         if self.frontiers is not None and snapshot.get('items') and snapshot['items'][-1].get('native_id'):
