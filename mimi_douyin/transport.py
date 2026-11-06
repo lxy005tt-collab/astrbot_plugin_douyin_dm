@@ -29,7 +29,7 @@ class BrowserWorker:
             self.process=await asyncio.create_subprocess_exec(self.config['node_binary'],
                 str(Path(__file__).parent/'browser/worker.mjs'),stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL,env=env,
-                creationflags=0x08000000 if os.name=='nt' else 0,limit=2*1024*1024)
+                creationflags=0x08000000 if os.name=='nt' else 0,limit=16*1024*1024)
             self.pending={}
             self.reader=asyncio.create_task(self._read(self.process,self.pending))
 
