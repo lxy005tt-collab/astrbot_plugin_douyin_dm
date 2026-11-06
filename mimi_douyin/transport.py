@@ -17,6 +17,7 @@ class BrowserWorker:
         self.pending={}
         self.sequence=0
         self.start_lock=asyncio.Lock()
+        self.open_lock=asyncio.Lock()
         self.cache_registration_error=''
 
     async def start(self):
@@ -29,30 +30,35 @@ class BrowserWorker:
                 str(Path(__file__).parent/'browser/worker.mjs'),stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL,env=env,
                 creationflags=0x08000000 if os.name=='nt' else 0,limit=2*1024*1024)
-            self.reader=asyncio.create_task(self._read())
+            self.pending={}
+            self.reader=asyncio.create_task(self._read(self.process,self.pending))
 
-    async def _read(self):
+    async def _read(self,process,pending):
         try:
-            while line:=await self.process.stdout.readline():
+            while line:=await process.stdout.readline():
                 reply=json.loads(line)
-                future=self.pending.pop(reply.get('id'),None)
+                future=pending.pop(reply.get('id'),None)
                 if future and not future.done():
                     if reply.get('ok'):future.set_result(reply['result'])
                     else:future.set_exception(BrowserError(reply.get('error','浏览器操作失败。')))
         finally:
-            for future in self.pending.values():
+            for future in pending.values():
                 if not future.done():future.set_exception(BrowserError('抖音浏览器连接已关闭。'))
-            self.pending.clear()
+            pending.clear()
 
     async def call(self, action, args=None, timeout=30):
         await self.start()
+        return await self._call(self.process,action,args,timeout)
+
+    async def _call(self,process,action,args=None,timeout=30):
+        pending=self.pending
         self.sequence+=1
         request_id=self.sequence
         future=asyncio.get_running_loop().create_future()
-        self.pending[request_id]=future
-        self.process.stdin.write((json.dumps({'id':request_id,'action':action,'args':args or {}},ensure_ascii=False)+'\n').encode())
-        await self.process.stdin.drain()
+        pending[request_id]=future
         try:
+            process.stdin.write((json.dumps({'id':request_id,'action':action,'args':args or {}},ensure_ascii=False)+'\n').encode())
+            await process.stdin.drain()
             result=await asyncio.wait_for(future,timeout)
             if action in ('download','browse') and self.config.get('media_cache_registry'):
                 try:
@@ -61,29 +67,36 @@ class BrowserWorker:
                 except (OSError,sqlite3.Error):self.cache_registration_error='缓存登记暂不可写，未登记的文件会保留。'
             return result
         except asyncio.TimeoutError as exc:
-            self.pending.pop(request_id,None)
             if action=='send':return {'state':'unknown','receipt':'browser_command_timeout'}
             raise BrowserError('抖音浏览器操作超时。') from exc
+        finally:
+            pending.pop(request_id,None)
+            if not future.done():future.cancel()
 
     async def open(self,peer=None):
-        return await self.call('open',{'profile':self.config['browser_profile'],
-            'media_dir':self.config['media_dir'],'playwright_package':self.config['playwright_package'],
-            'max_download_mb':self.config.get('max_download_mb',64),
-            'max_video_duration_seconds':self.config.get('max_video_duration_seconds',180),
-            'max_post_images':self.config.get('max_post_images',30),'restore_peer':peer,
-            'browser_channel':self.config.get('browser_channel',''),
-            'browser_executable':self.config.get('browser_executable',''),
-            'headless':bool(self.config.get('browser_headless',False))},timeout=90)
+        async with self.open_lock:
+            return await self.call('open',{'profile':self.config['browser_profile'],
+                'media_dir':self.config['media_dir'],'playwright_package':self.config['playwright_package'],
+                'max_download_mb':self.config.get('max_download_mb',64),
+                'max_video_duration_seconds':self.config.get('max_video_duration_seconds',180),
+                'max_post_images':self.config.get('max_post_images',30),'restore_peer':peer,
+                'browser_channel':self.config.get('browser_channel',''),
+                'browser_executable':self.config.get('browser_executable',''),
+                'headless':bool(self.config.get('browser_headless',False))},timeout=90)
 
     async def close(self):
-        if not self.process or self.process.returncode is not None:return
-        try:await self.call('close',timeout=10)
-        except (BrowserError,ConnectionError):pass
-        if self.process.stdin:self.process.stdin.close()
-        try:await asyncio.wait_for(self.process.wait(),5)
-        except asyncio.TimeoutError:
-            self.process.kill();await self.process.wait()
-        if self.reader:await asyncio.gather(self.reader,return_exceptions=True)
+        async with self.start_lock:
+            process=self.process
+            if not process or process.returncode is not None:return
+            try:await self._call(process,'close',timeout=10)
+            except (BrowserError,OSError):pass
+            finally:
+                if process.stdin:process.stdin.close()
+                try:await asyncio.wait_for(process.wait(),5)
+                except asyncio.TimeoutError:
+                    process.kill();await process.wait()
+                if self.reader:await asyncio.gather(self.reader,return_exceptions=True)
+
 
 
 class Ledger:
