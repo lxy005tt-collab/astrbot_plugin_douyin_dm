@@ -79,7 +79,12 @@ class SetupAPI:
         body=await request.json(default={})
         if not isinstance(body,dict):return {'status':'error','message':'请求应为设置对象。'}
         try:
+            busy='正在处理消息，请等当前回复结束后修改上下文关联。'
+            if self.owner.job_lock.locked():raise BrowserError(busy)
             async with self.owner.action_lock:
+                # A reply may start while this request waits for an activity.
+                # Never hold action_lock while waiting for that reply's job_lock.
+                if self.owner.job_lock.locked():raise BrowserError(busy)
                 async with self.owner.job_lock:
                     if body.get('action')=='remove':
                         self.owner.context_sharing.remove_link(str(body.get('source_session') or self.owner.session_id()))

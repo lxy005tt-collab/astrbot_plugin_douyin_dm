@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
 import readline from 'node:readline';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {enterReply,submitReply} from './browser_actions.mjs';
+import {sendReply} from './browser_actions.mjs';
 import {ConversationIdentities} from './conversation_identity.mjs';
 
 let context, page, settings, identities, identityFile;
@@ -131,27 +131,7 @@ async function snapshot(options={}) {
 }
 
 async function send(args) {
-  const before=await snapshot();
-  if(!before.ready || before.peer.key!==args.peer_key)throw new Error('当前私信对象与已绑定对象不一致，未发送。');
-  if(args.conversation_type&&before.peer.conversation_type!==args.conversation_type)throw new Error('会话类型已变化，没有发送。');
-  if(!before.direction_proven)throw new Error('尚未确认消息的收发方向，未发送。');
-  const text=String(args.text||'').trim();
-  if(!text || text.length>2000)throw new Error('回复为空或超过当前单条文字限制。');
-  const count=before.items.filter(x=>x.sender==='me'&&x.text===text).length;
-  await enterReply(page,text);
-  await submitReply(page);
-  for(let i=0;i<10;i++) {
-    await page.waitForTimeout(500);
-    const after=await snapshot();
-    if(!after.ready || after.peer.key!==args.peer_key)return {state:'unknown',receipt:'conversation_changed_after_send'};
-    const matches=after.items.filter(x=>x.sender==='me'&&x.text===text);
-    if(matches.length>count) {
-      const last=matches.at(-1);
-      if(last.failed)return {state:'failed',receipt:'ui_send_failed'};
-      if(!last.pending && i>=2)return {state:'sent',receipt:'ui_own_message_echo',message_key:last.key};
-    }
-  }
-  return {state:'unknown',receipt:'no_confirmed_ui_echo'};
+  return sendReply(page,snapshot,args);
 }
 
 async function selectConversation(args) {

@@ -32,7 +32,9 @@ from .mimi_douyin.transport import BrowserWorker, Ledger
 
 def addressed_to_bot(items,peer,names=()):
     names=list(dict.fromkeys([*names,*peer.get('self_aliases',[]),*([peer['self_user_name']] if peer.get('self_user_name') else [])]))
-    return any(item.get('mentioned_bot') or any(re.search(r'@'+re.escape(name)+r'(?:\s|$)',item.get('text','')) for name in names) for item in items)
+    uid=str(peer.get('self_user_id') or '')
+    return any(item.get('mentioned_bot') or (uid and uid in map(str,item.get('mentioned_ids',[])))
+        or any(re.search(r'@'+re.escape(name)+r'(?:\s|$)',item.get('text','')) for name in names) for item in items)
 
 
 def add_channel_identity(event,request):

@@ -23,6 +23,35 @@ export async function submitReply(page) {
   });
 }
 
+export async function sendReply(page,snapshot,args) {
+  const before=await snapshot();
+  const rejected=(receipt,error)=>({state:'not_sent',receipt,error});
+  // These checks finish before touching the editor or attempting a click.
+  // Exceptions once dispatch starts must retain the caller's unknown outcome.
+  if(!before.ready || before.peer.key!==args.peer_key)
+    return rejected('recipient_mismatch','当前私信对象与已绑定对象不一致，未发送。');
+  if(args.conversation_type&&before.peer.conversation_type!==args.conversation_type)
+    return rejected('conversation_type_changed','会话类型已变化，没有发送。');
+  if(!before.direction_proven)return rejected('direction_unconfirmed','尚未确认消息的收发方向，未发送。');
+  const text=String(args.text||'').trim();
+  if(!text || text.length>2000)return rejected('invalid_text','回复为空或超过当前单条文字限制。');
+  const count=before.items.filter(x=>x.sender==='me'&&x.text===text).length;
+  await enterReply(page,text);
+  await submitReply(page);
+  for(let i=0;i<10;i++) {
+    await page.waitForTimeout(500);
+    const after=await snapshot();
+    if(!after.ready || after.peer.key!==args.peer_key)return {state:'unknown',receipt:'conversation_changed_after_send'};
+    const matches=after.items.filter(x=>x.sender==='me'&&x.text===text);
+    if(matches.length>count) {
+      const last=matches.at(-1);
+      if(last.failed)return {state:'failed',receipt:'ui_send_failed'};
+      if(!last.pending && i>=2)return {state:'sent',receipt:'ui_own_message_echo',message_key:last.key};
+    }
+  }
+  return {state:'unknown',receipt:'no_confirmed_ui_echo'};
+}
+
 export async function openBackgroundPage(context,anchor) {
   // This integration uses Chromium's persistent default context. A normal
   // context.newPage() creates an active tab and can activate the browser app.

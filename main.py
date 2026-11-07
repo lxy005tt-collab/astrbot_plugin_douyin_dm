@@ -74,13 +74,17 @@ class MimiDouyinDM(Star):
         kind='GroupMessage' if peer.get('conversation_type')=='group' else 'FriendMessage'
         return 'mimi-douyin:'+kind+':'+peer['key']
 
-    def with_account_identity(self,peer):
-        uid=peer.get('self_user_id','');name=peer.get('self_user_name','')
-        if uid and name:self.ledger.put('account_identity',{'id':uid,'name':name})
-        stored=self.ledger.get('account_identity',{})
-        aliases=list(dict.fromkeys(value for value in [name,self.config.get('account_display_name','').strip(),stored.get('name','') if uid and stored.get('id')==uid else ''] if value))
-        name=self.config.get('account_display_name','').strip() or name or (stored.get('name','') if uid and stored.get('id')==uid else '')
-        return {**peer,'self_user_name':name,'self_aliases':aliases}
+    def with_account_identity(self,peer,*,reset=False):
+        # Own messages can leave the virtual list. Keep the verified identity
+        # until rebinding or observing another account, including one without a name.
+        stored={} if reset else self.ledger.get('account_identity',{})
+        uid=peer.get('self_user_id') or stored.get('id','')
+        name=peer.get('self_user_name') or (stored.get('name','') if uid and stored.get('id')==uid else '')
+        identity={'id':uid,'name':name} if uid else {}
+        if reset or identity!=stored:self.ledger.put('account_identity',identity)
+        configured=self.config.get('account_display_name','').strip()
+        aliases=list(dict.fromkeys(value for value in (name,configured) if value))
+        return {**peer,'self_user_id':uid,'self_user_name':configured or name,'self_aliases':aliases}
 
     async def initialize(self):
         self.context.platform_manager.platform_insts.append(self.platform)
@@ -306,7 +310,7 @@ class MimiDouyinDM(Star):
                 if not snapshot.get('direction_proven'):
                     raise BrowserError('尚未从页面确认收发方向，请保持双方已有消息的私信打开。')
                 self.inbox.discard()
-                self.binding={'peer':self.with_account_identity(snapshot['peer']),'bound_at':time.time()}
+                self.binding={'peer':self.with_account_identity(snapshot['peer'],reset=True),'bound_at':time.time()}
                 self.ledger.put('binding',self.binding)
                 whitelist='group_whitelist' if snapshot['peer'].get('conversation_type')=='group' else 'private_whitelist'
                 if snapshot['peer']['key'] not in self.config.get(whitelist,[]):
