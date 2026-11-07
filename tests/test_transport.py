@@ -43,6 +43,24 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.spawn.assert_awaited_once()
         self.assertFalse(self.worker.pending)
 
+    async def test_large_snapshot_reply_and_followup(self):
+        """A real stdout line above 2 MiB must not kill the RPC reader."""
+        payload = "x" * (3 * 1024 * 1024)
+        child = """import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    value = 'x' * (3 * 1024 * 1024) if request['action'] == 'snapshot' else 'ok'
+    print(json.dumps({'id':request['id'], 'ok':True, 'result':value}), flush=True)
+"""
+
+        async def spawn(*args, **kwargs):
+            return await self.create(sys.executable, '-u', '-c', child, **kwargs)
+
+        self.spawn.side_effect = spawn
+        self.assertEqual(await self.worker.call('snapshot'), payload)
+        self.assertEqual(await self.worker.call('status'), 'ok')
+        self.assertFalse(self.worker.pending)
+
     async def test_real_node_worker_status_and_close_wire(self):
         self.spawn.side_effect = self.create
         self.assertEqual(await self.worker.call('status'),
