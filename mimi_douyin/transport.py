@@ -9,6 +9,10 @@ import time
 from .errors import BrowserError
 from .cache import CacheFiles
 
+class _ConnectionClosed(BrowserError):
+    """The response stream cannot be used again, even if the process is alive."""
+    pass
+
 class BrowserWorker:
     def __init__(self, config):
         self.config=config
@@ -19,11 +23,15 @@ class BrowserWorker:
         self.start_lock=asyncio.Lock()
         self.open_lock=asyncio.Lock()
         self.cache_registration_error=''
+        self._broken=False
+        self._open_args=None
 
     async def start(self):
         async with self.start_lock:
-            if self.process and self.process.returncode is None:return
+            if (self.process and self.process.returncode is None and not self._broken
+                    and self.reader and not self.reader.done()):return
             if not self.config.get('node_binary'):raise BrowserError('未找到 Node.js，请先在接入设置中检查依赖。')
+            await self._stop_process(self.process,self.reader)
             env=os.environ.copy()
             if self.config.get('playwright_browsers_path'):env['PLAYWRIGHT_BROWSERS_PATH']=self.config['playwright_browsers_path']
             self.process=await asyncio.create_subprocess_exec(self.config['node_binary'],
@@ -31,19 +39,68 @@ class BrowserWorker:
                 stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL,env=env,
                 creationflags=0x08000000 if os.name=='nt' else 0,limit=16*1024*1024)
             self.pending={}
+            self._broken=False
             self.reader=asyncio.create_task(self._read(self.process,self.pending))
+            self.reader.add_done_callback(self._reader_finished)
+            if self._open_args is not None:
+                try:await self._call(self.process,'open',dict(self._open_args),timeout=90)
+                except BaseException:
+                    await self._stop_process(self.process,self.reader)
+                    raise
+
+    @staticmethod
+    def _reader_finished(task):
+        if not task.cancelled():task.exception()
+
+    def _invalidate(self,process):
+        if process is self.process:self._broken=True
+        if process.stdin:process.stdin.close()
+
+    @staticmethod
+    async def _discard_output(stream):
+        while await stream.read(65536):pass
+
+    async def _stop_process(self,process,reader):
+        if not process:return
+        if process.stdin:process.stdin.close()
+        if process.returncode is None and reader and not reader.done():
+            reader.cancel()
+            await asyncio.gather(reader,return_exceptions=True)
+        # Drain a failed reader's buffered output so a large blocked writer can
+        # exit. A previous, already-dead generation may still have its own reader.
+        drain=asyncio.create_task(self._discard_output(process.stdout)) if not reader or reader.done() else None
+        try:
+            try:await asyncio.wait_for(process.wait(),5)
+            except asyncio.TimeoutError:
+                if process.returncode is None:
+                    try:process.kill()
+                    except ProcessLookupError:pass
+                await asyncio.wait_for(process.wait(),5)
+        finally:
+            if drain:
+                drain.cancel()
+                await asyncio.gather(drain,return_exceptions=True)
 
     async def _read(self,process,pending):
+        message='抖音浏览器连接已关闭，请重试读取或重新绑定；未自动重发消息。'
         try:
             while line:=await process.stdout.readline():
                 reply=json.loads(line)
+                if (not isinstance(reply,dict) or type(reply.get('id')) is not int
+                        or type(reply.get('ok')) is not bool or (reply['ok'] and 'result' not in reply)):
+                    raise ValueError('invalid response envelope')
                 future=pending.pop(reply.get('id'),None)
                 if future and not future.done():
                     if reply.get('ok'):future.set_result(reply['result'])
                     else:future.set_exception(BrowserError(reply.get('error','浏览器操作失败。')))
+        except (ValueError,TypeError):
+            message='抖音浏览器响应超过 16 MiB 或格式无效，连接已停用；请重试读取或重新绑定。'
+        except (OSError,RuntimeError):
+            message='抖音浏览器响应读取失败，连接已停用；请重试读取或重新绑定。'
         finally:
+            self._invalidate(process)
             for future in pending.values():
-                if not future.done():future.set_exception(BrowserError('抖音浏览器连接已关闭。'))
+                if not future.done():future.set_exception(_ConnectionClosed(message))
             pending.clear()
 
     async def call(self, action, args=None, timeout=30):
@@ -57,9 +114,17 @@ class BrowserWorker:
         future=asyncio.get_running_loop().create_future()
         pending[request_id]=future
         try:
-            process.stdin.write((json.dumps({'id':request_id,'action':action,'args':args or {}},ensure_ascii=False)+'\n').encode())
-            await process.stdin.drain()
-            result=await asyncio.wait_for(future,timeout)
+            async def exchange():
+                process.stdin.write((json.dumps({'id':request_id,'action':action,'args':args or {}},ensure_ascii=False)+'\n').encode())
+                await process.stdin.drain()
+                return await future
+            result=await asyncio.wait_for(exchange(),timeout)
+            if process is self.process and action=='open':self._open_args=dict(args or {})
+            elif process is self.process and action=='configure' and self._open_args is not None:
+                self._open_args.update({key:value for key,value in (args or {}).items()
+                    if key in ('media_dir','max_download_mb','max_video_duration_seconds')})
+            elif process is self.process and self._open_args is not None and isinstance(result,dict) and result.get('ready') and isinstance(result.get('peer'),dict):
+                self._open_args={**self._open_args,'restore_peer':dict(result['peer'])}
             if action in ('download','browse') and self.config.get('media_cache_registry'):
                 try:
                     CacheFiles(self.config['media_cache_registry']).register(self.config['media_dir'],result)
@@ -69,9 +134,17 @@ class BrowserWorker:
         except asyncio.TimeoutError as exc:
             if action=='send':return {'state':'unknown','receipt':'browser_command_timeout'}
             raise BrowserError('抖音浏览器操作超时。') from exc
+        except _ConnectionClosed:
+            if action=='send':return {'state':'unknown','receipt':'browser_connection_closed'}
+            raise
+        except OSError:
+            self._invalidate(process)
+            if action=='send':return {'state':'unknown','receipt':'browser_connection_closed'}
+            raise
         finally:
             pending.pop(request_id,None)
             if not future.done():future.cancel()
+            elif not future.cancelled():future.exception()
 
     async def open(self,peer=None):
         async with self.open_lock:
@@ -87,16 +160,17 @@ class BrowserWorker:
 
     async def close(self):
         async with self.start_lock:
+            self._open_args=None
             process=self.process
-            if not process or process.returncode is not None:return
-            try:await self._call(process,'close',timeout=10)
+            if not process:return
+            try:
+                if process.returncode is None and not self._broken and self.reader and not self.reader.done():
+                    await self._call(process,'close',timeout=10)
             except (BrowserError,OSError):pass
             finally:
-                if process.stdin:process.stdin.close()
-                try:await asyncio.wait_for(process.wait(),5)
-                except asyncio.TimeoutError:
-                    process.kill();await process.wait()
+                await self._stop_process(process,self.reader)
                 if self.reader:await asyncio.gather(self.reader,return_exceptions=True)
+                self._open_args=None
 
 
 
