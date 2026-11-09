@@ -360,5 +360,225 @@
         "hint": "可自定义判断标准或回复风格；不包含固定角色、群号、昵称或服务商。"
       }
     }
+  },
+  "tts_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "启用语音合成",
+    "hint": "用 fnlp/MOSS-TTSD-v0.5 把回复转成语音。开启后仍受下方发送开关控制。"
+  },
+  "tts_send_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "把合成语音发送到抖音",
+    "hint": "抖音网页私信对语音支持不稳定；先只生成不发送，确认音色和内容满意再打开。"
+  },
+  "tts_private_only": {
+    "type": "bool",
+    "default": true,
+    "description": "语音只在私聊发送",
+    "hint": "开启后群聊一律不发语音视频，只发文字。"
+  },
+  "tts_voice": {
+    "type": "string",
+    "default": "anna",
+    "options": [
+      "anna",
+      "alex",
+      "bella",
+      "claire",
+      "david",
+      "diana"
+    ],
+    "description": "语音音色"
+  },
+  "tts_speed": {
+    "type": "float",
+    "default": 0.9,
+    "description": "语速（0.5～2.0）",
+    "hint": "0.9 中文咬字最完整；调到 1.0 更自然但个别字会糊。"
+  },
+  "tts_sample_rate": {
+    "type": "int",
+    "default": 44100,
+    "description": "采样率",
+    "hint": "44100 保留齿音与气声细节，听感比 24000 清楚。"
+  },
+  "singing_library_dir": {
+    "type": "string",
+    "default": "/root/AstrBot/data/plugin_data/astrbot_plugin_douyin_dm/media/singing",
+    "description": "内置演唱干声目录",
+    "hint": "存放角色甲真实演唱的干声；说\"唱歌\"时会从这里挑一首，再用 RVC 换音色。"
+  },
+  "singing_library_pick": {
+    "type": "string",
+    "default": "",
+    "description": "固定演唱曲目",
+    "hint": "填目录里的文件名则固定唱这首；留空每次随机。"
+  },
+  "singing_clip_seconds": {
+    "type": "int",
+    "default": 60,
+    "description": "每次演唱时长（秒）",
+    "hint": "从歌曲里裁多长发出去。范围 8～180；60 秒约 1MB，抖音上传很快。"
+  },
+  "rvc_channel": {
+    "type": "string",
+    "default": "replicate",
+    "options": [
+      "replicate",
+      "eachlabs"
+    ],
+    "description": "RVC 服务通道",
+    "hint": "replicate 按次计费 $0.038；eachlabs 按处理秒计费，短片段更便宜。"
+  },
+  "replicate_api_token": {
+    "type": "string",
+    "default": "",
+    "description": "Replicate API Token",
+    "hint": "从 replicate.com/account/api-tokens 获取，形如 r8_xxxx。"
+  },
+  "replicate_model_version": {
+    "type": "string",
+    "default": "",
+    "description": "RVC 模型版本哈希",
+    "hint": "在 Replicate 模型页 API 标签里能看到 version 哈希；留空则用最新版本需自行确认。"
+  },
+  "eachlabs_api_key": {
+    "type": "string",
+    "default": "",
+    "description": "Eachlabs API Key"
+  },
+  "rvc_model_url": {
+    "type": "string",
+    "default": "",
+    "description": "自训练 RVC 模型下载地址",
+    "hint": "指向 .zip 的直链。留空则用服务端内置音色（不是角色甲）。"
+  },
+  "rvc_model_name": {
+    "type": "string",
+    "default": "CUSTOM",
+    "description": "RVC 音色名"
+  },
+  "rvc_pitch_change": {
+    "type": "int",
+    "default": 0,
+    "description": "音高偏移（半音）",
+    "hint": "男声转女声用 +12，女声转男声用 -12；同为女声一般填 0。"
+  },
+  "rvc_index_rate": {
+    "type": "float",
+    "default": 0.5,
+    "description": "音色相似度权重",
+    "hint": "0.5~0.7 翻唱常用；越高越像目标音色，但细节损失越多。"
+  },
+  "rvc_protect": {
+    "type": "float",
+    "default": 0.33,
+    "description": "保留原始气声比例",
+    "hint": "0.33 为默认；越大保留越多原始清辅音与呼吸。"
+  },
+  "rvc_filter_radius": {
+    "type": "int",
+    "default": 3,
+    "description": "滤波半径"
+  },
+  "rvc_rms_mix_rate": {
+    "type": "float",
+    "default": 0.25,
+    "description": "音量包络混合比"
+  },
+  "rvc_timeout_seconds": {
+    "type": "int",
+    "default": 300,
+    "description": "RVC 超时（秒）"
+  },
+  "tts_mode": {
+    "type": "string",
+    "default": "sing_or_speak",
+    "options": [
+      "sing_or_speak",
+      "always",
+      "mention"
+    ],
+    "description": "语音触发方式",
+    "hint": "sing_or_speak=只在聊到语音/声音/唱歌或回复带歌词时配音；always=每条文字回复都配语音；mention=只在被@或点名时配语音。"
+  },
+  "tts_api_key": {
+    "type": "string",
+    "default": "",
+    "description": "SiliconFlow API Key",
+    "hint": "留空则复用 siliconflow/qwen3-omni 模型的 Key。"
+  },
+  "tts_ref_audio": {
+    "type": "string",
+    "default": "",
+    "description": "音色克隆参考音频地址",
+    "hint": "填入角色甲干声的 https 地址（先用 SiliconFlow 文件接口上传取得）。填了就按这个音色克隆，忽略预置音色。"
+  },
+  "tts_ref_text": {
+    "type": "string",
+    "default": "",
+    "description": "参考音频对应文字",
+    "hint": "参考音频里说的那句原文，越准确克隆越像。"
+  },
+  "tts_timeout_seconds": {
+    "type": "int",
+    "default": 60,
+    "description": "语音合成超时（秒）"
+  },
+  "tts_background_dir": {
+    "type": "string",
+    "default": "/root/AstrBot/data/plugin_data/astrbot_plugin_douyin_dm/media/voice-bg",
+    "description": "语音视频背景图目录",
+    "hint": "从该目录随机取一张竖版图片作为语音视频背景；留空或目录不存在时退回深蓝色纯底。"
+  },
+  "tts_background_image": {
+    "type": "string",
+    "default": "",
+    "description": "固定语音背景图文件名",
+    "hint": "填写背景目录内的文件名则固定用它；留空则每次随机挑一张。"
+  },
+  "tts_image_model": {
+    "type": "string",
+    "default": "Kwai-Kolors/Kolors",
+    "description": "生成背景图用模型",
+    "hint": "SiliconFlow 生图模型；Kwai-Kolors/Kolors 便宜且稳定，Tongyi-MAI/Z-Image-Turbo 更快。"
+  },
+  "group_auto_reply_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "群聊自动回应总开关",
+    "hint": "关闭后群聊完全不回应（含接话、视频、分享），私信不受影响。"
+  },
+  "auto_start_on_boot": {
+    "type": "bool",
+    "default": true,
+    "description": "启动后自动重连抖音",
+    "hint": "AstrBot 启动/插件重载后自动打开浏览器并恢复绑定的会话，失败会自动重试。"
+  },
+  "open_timeout_seconds": {
+    "type": "int",
+    "default": 240,
+    "description": "打开浏览器超时（秒）",
+    "hint": "手机冷启动较慢，建议 180～300。"
+  },
+  "download_timeout_seconds": {
+    "type": "int",
+    "default": 300,
+    "description": "下载作品超时（秒）",
+    "hint": "长视频下载耗时较久。"
+  },
+  "guard_interval_seconds": {
+    "type": "int",
+    "default": 30,
+    "description": "掉线守护检查间隔（秒）",
+    "hint": "浏览器崩溃或重启后按此间隔自动重连。"
+  },
+  "auto_search_uncertain": {
+    "type": "bool",
+    "default": true,
+    "description": "不确定信息自动联网搜索",
+    "hint": "视频或对话中遇到无法确认的信息时，优先使用 anysearch_search / anysearch_batch_search 核实；未配置搜索服务时保留不确定，不编造。"
   }
 }
