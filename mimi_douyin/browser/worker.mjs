@@ -8,6 +8,7 @@ import readline from 'node:readline';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {sendReply} from './browser_actions.mjs';
 import {ConversationIdentities} from './conversation_identity.mjs';
+import {actionTimeout, withTimeout} from './rpc_timeouts.mjs';
 
 let context, page, settings, identities, identityFile;
 const hash=x=>createHash('sha256').update(x).digest('hex');
@@ -180,7 +181,8 @@ input.on('line',line=>{queue=queue.then(async()=>{
       },
       close:async()=>{await context?.close();context=null;page=null;return {closed:true};}};
     if(!actions[request.action])throw new Error('未知浏览器操作。');
-    const result=await actions[request.action]();
+    const action=String(request.action||'');
+    const result=await withTimeout(actions[request.action](),actionTimeout(action),action);
     process.stdout.write(JSON.stringify({id:request.id,ok:true,result})+'\n');
   } catch(error) {
     // Do not put signed media URLs, cookies, or page HTML in logs.
